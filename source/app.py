@@ -4,6 +4,7 @@
 from pathlib import Path
 from urllib.parse import urlsplit
 import fcntl, hashlib, json, os, secrets, subprocess, sys, threading, time, webbrowser
+import stat
 from flask import Flask, jsonify, render_template, request, send_file, abort
 from werkzeug.serving import make_server
 import assets as A, catalog, csvfile, formula, jobs, manifest as M, paths, production
@@ -126,6 +127,12 @@ def create_app():
             ):
                 continue
             p = Path(paths.contained(paths.VIDEOS, row["file"]))
+            try:
+                info = p.stat()
+            except FileNotFoundError:
+                continue
+            if not stat.S_ISREG(info.st_mode) or info.st_size == 0:
+                continue
             rows.append(
                 {
                     k: row.get(k, "")
@@ -138,7 +145,7 @@ def create_app():
                         "caption",
                     )
                 }
-                | {"available": p.is_file() and p.stat().st_size > 0}
+                | {"available": True}
             )
         return jsonify(outputs=rows[:300])
 
@@ -332,6 +339,14 @@ def create_app():
 
 
 def main():
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--port", type=int, default=0, help="Local port (default: choose a free port)")
+    parser.add_argument("--no-browser", action="store_true")
+    args = parser.parse_args()
+    if not 0 <= args.port <= 65535:
+        parser.error("--port must be between 0 and 65535")
     paths.prepare()
     lock = open(Path(paths.WORK) / "server.lock", "a+")
     record = Path(paths.WORK) / "server.json"
@@ -352,11 +367,11 @@ def main():
         print("Silver Goose is already running: " + url)
         return
     app = create_app()
-    # Ask macOS for an unused port: no collision or interference with Golden Goose.
-    server = make_server("127.0.0.1", 0, app, threaded=True)
+    # Port zero asks macOS for an unused port; explicit ports fail if occupied.
+    server = make_server("127.0.0.1", args.port, app, threaded=True)
     url = "http://127.0.0.1:" + str(server.server_port)
     atomic_write_json(str(record), {"url": url, "pid": os.getpid()})
-    if "--no-browser" not in sys.argv:
+    if not args.no_browser:
         webbrowser.open(url)
     print(
         "Silver Goose: "

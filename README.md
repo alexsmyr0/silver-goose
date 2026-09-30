@@ -16,6 +16,9 @@ the video helpers and prepares Apple's English speech model. First setup needs i
 It may ask for your Mac password during system-tool installation. Later launches reuse
 what is installed and open the local panel. No paid service is required.
 
+To choose a port from Terminal, run `./"Start Silver Goose.command" --port 8080`.
+If the panel is already running, stop it with Control-C first; another launch reopens it.
+
 **Requires macOS 26 or newer** for automatic captions. Tested on Apple Silicon.
 If macOS blocks an internet-downloaded launcher, use Finder's **Open** command or allow
 it in **System Settings → Privacy & Security**, then open it again.
@@ -53,6 +56,9 @@ library/videos/openart/tutorial_story/
 library/videos/openart/ai_larp/
 ```
 
+Moving or deleting a video removes its card automatically within a few seconds.
+Its build history and reuse counts are preserved. Moving it back restores its card.
+
 ## Assets
 
 Add prepared clips in Assets; preview or remove files, edit wording and music settings,
@@ -68,14 +74,14 @@ base music, emoji, post captions, and caption vocabulary/corrections.
 - Removed assets go to `library/trash`, accessible from Assets. Removing an output or
   asset never resets the successful-build history.
 
-This handoff includes the available local footage and settings with **fresh history**.
-The source library had no Card-only short clips, Hook Story ingredients, or AI LARP
-source pairs/tutorials. Those formats need uploads before use. Regular Content farm
-has Chat and Director tutorials; MCP has its separate MCP content farm.
+This handoff starts with **no footage, tutorials, speaking clips or finished videos**,
+and fresh history. It retains music and its settings, wording for all formats, captions,
+Content farm titles, comparison wording, money cards, logo pairs, the font and emoji settings.
+Upload your own video ingredients in Assets before building.
 
 Keep `library` with `source`. Back up the whole folder to preserve assets, settings,
-finished videos and reuse history. Never share only `source` if you want the included
-footage and settings. The launcher will not download missing footage.
+finished videos and reuse history. Share the complete folder to include its wording,
+logos and settings. The launcher will not download missing footage.
 
 ## Development
 

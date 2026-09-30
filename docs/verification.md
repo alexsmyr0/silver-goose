@@ -2,10 +2,12 @@
 
 ## Results
 
-- **22 core tests passed** in a disposable library, also using the fresh launcher's
+- **23 core tests passed** in a disposable library. The original 22 also passed using the fresh launcher's
   isolated Python environment. Covers cross-process IDs and locks, request-local content
   selection, traversal/symlink refusal, corrupt-data handling, atomic uploads, text edits,
   shared tutorial settings, successful-only usage, recovery files and local HTTP guards.
+  The added gallery check covers moved, restored and empty files, preserved history,
+  and missing records not consuming the visible list limit.
 - **All eight formats rendered successfully.** Nine MP4s: one per format, plus a second
   AI LARP output to cover both plain and captioned variants. Every output was fully
   decoded with FFmpeg and checked for H.264 picture, AAC audio, square pixels and the
@@ -50,8 +52,9 @@ the local HTTP endpoint correctly served MP4 byte ranges.
   compiles against the local SDK but was not forced by removing system assets.
 - Intel Macs and older macOS versions were not tested. macOS 26+ is required; the tested Mac
   uses Apple Silicon. A missing/unsupported Apple speech engine reports an error.
-- Current assets do not populate Card-only scenes, Hook Story pools or AI LARP pairs/tutorials.
-  John needs those uploads to make his own videos in those formats.
+- John's current handoff includes music but no video ingredients. He needs to upload his
+  own footage and tutorials before building. The successful render checks above used
+  the earlier populated library or temporary fixtures.
 - No test can guarantee a remote platform will accept a manually posted video; Silver Goose
   makes local videos and has no posting integration.
 

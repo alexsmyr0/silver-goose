@@ -66,7 +66,8 @@ and passed explicitly to worker processes, not stored as a fake account.
    their history fails; broken exports stay out of the finished-video folders.
 
 The server has its own instance lock. A second launch checks the existing panel's app and
-library identity before reopening it. It uses a free loopback port and never kills another
+library identity before reopening it. It uses a free loopback port by default, or the
+explicit `--port` value, and never kills another
 process. All mutations require the page's local token and matching Origin; this is a
 localhost request guard, not a user login. The server is not exposed to the LAN.
 
@@ -82,6 +83,9 @@ One missing tutorial tag was removed because its source file was absent.
 production settings and private ingredients accompany the code. No generated videos,
 manifest, ID sequence, jobs, compiled native binaries or virtual environment is shipped.
 Executable launcher permissions and every archive entry are verified.
+The current handoff library contains music and its settings, wording, captions, money
+cards, logo pairs, the font and emoji settings. Video ingredients and their saved
+assignments are empty.
 
 The launcher detects missing dependencies; it asks before installing system tools.
 Python packages are installed inside this folder, native helpers compiled on this Mac,

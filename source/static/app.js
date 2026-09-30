@@ -15,6 +15,7 @@ let catalog,
   busy = false,
   group = "farm",
   lastJob = "",
+  lastOutputs = "",
   noticeTimer,
   refreshing = false;
 const labels = {
@@ -190,6 +191,10 @@ $("#build").onclick = act(async () => {
 async function outputs() {
   const fmt = $("#output-format").value;
   const result = await api("/api/outputs?format=" + encodeURIComponent(fmt));
+  if (fmt !== $("#output-format").value) return;
+  const signature = JSON.stringify(result.outputs);
+  if (signature === lastOutputs) return;
+  lastOutputs = signature;
   $("#output-count").textContent = result.outputs.length;
   $("#output-grid").innerHTML = result.outputs.length
     ? result.outputs
@@ -244,10 +249,10 @@ async function poll() {
       const key = j.id + "|" + j.status + "|" + j.made;
       if (key !== lastJob) {
         lastJob = key;
-        await outputs();
         if (!busy) await refreshFormats();
       }
     }
+    await outputs();
     if (wasBusy && !busy) toast("Build finished.");
   } finally {
     refreshing = false;

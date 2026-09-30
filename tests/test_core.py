@@ -291,6 +291,27 @@ class Core(unittest.TestCase):
         body = create_app().test_client().get("/").text
         self.assertEqual(re.findall('data-tab="([^"]+)"', body), ["builder", "assets"])
 
+    def test_outputs_hide_moved_files_without_changing_history(self):
+        clip = pathlib.Path(paths.output("line")) / "final_0001.mp4"
+        clip.write_bytes(b"finished video")
+        row = dict(video_id="final_0001", file="line/final_0001.mp4",
+                   format="line", product="mcp", status="ok")
+        # Missing records must not consume the visible list's 300-item limit.
+        M.write_rows([row] + [dict(row, video_id=f"missing_{i}",
+                                 file=f"line/missing_{i}.mp4") for i in range(301)])
+        history = pathlib.Path(paths.data("manifest.csv")).read_bytes()
+        client = create_app().test_client()
+        self.assertEqual(len(client.get("/api/outputs").json["outputs"]), 1)
+        moved = paths.LIBRARY / clip.name
+        clip.rename(moved)
+        self.assertEqual(client.get("/api/outputs").json["outputs"], [])
+        self.assertEqual(client.get("/api/outputs?format=line").json["outputs"], [])
+        moved.rename(clip)
+        self.assertEqual(len(client.get("/api/outputs").json["outputs"]), 1)
+        clip.write_bytes(b"")
+        self.assertEqual(client.get("/api/outputs").json["outputs"], [])
+        self.assertEqual(pathlib.Path(paths.data("manifest.csv")).read_bytes(), history)
+
     def test_corrupt_formula_is_visible(self):
         import formula
 
