@@ -1,0 +1,15 @@
+/library/
+/.venv/
+/.venv-old-*/
+.ruff_cache/
+/dist/
+/evidence/
+__pycache__/
+*.pyc
+.DS_Store
+/source/.render_hook
+/source/.transcribe
+/source/.to_sdr
+/source/.reaction_cutout
+/source/.cutout
+/source/.launch-lock/

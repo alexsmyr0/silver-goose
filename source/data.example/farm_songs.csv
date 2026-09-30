@@ -1,0 +1,4 @@
+song,start,gain_db,chance,note
+highway.m4a,0.25,-17,,"The original. No chance set, so it takes whatever the named ones leave."
+back-in-black.m4a,5.65,-17,10,"AC/DC, instrumental. Steven: starts at 5s 39f (60ths), -17 dB, 10%."
+fortunate-son.m4a,4.1667,-15,10,"CCR, instrumental. Steven: starts at 4s 10f (60ths), -15 dB, 10%."

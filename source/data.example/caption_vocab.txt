@@ -1,0 +1,16 @@
+# Words to prime the speech recogniser with, one per line.
+# NOTE: this currently does NOTHING. Apple accepts the vocabulary and ignores it - measured
+# byte-identical output across 153 runs, including runs primed with the wrong answer on
+# caption_fixes.csv instead, which is applied every time and always works.
+content farm
+AI content farm
+Claude
+OpenArt
+MCP
+Jarvis
+Zillow
+n8n
+ChatGPT
+Instagram
+TikTok
+faceless

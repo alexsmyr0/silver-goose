@@ -1,0 +1,6 @@
+id,bad,good,tier,your_uses,retire_at,note
+1,"Part time job","Claude + Kids YT",observed,0,25,"Seen on the reference account. No view count of its own - the comparison format overall ran a 6.5% hit rate over 46 reels."
+2,"Part time job","Kids YouTube + AI",observed,0,25,"Seen on the reference account, same day as id 1."
+3,"Part time job","Claude + YT Kids",untested,0,25,"Added by hand."
+4,"Part time job","Claude + Kids",untested,0,25,"Added by hand."
+5,"Part time job","Kids + Youtube",untested,0,25,"Added by hand."
