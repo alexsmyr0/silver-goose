@@ -16,6 +16,10 @@ the video helpers and prepares Apple's English speech model. First setup needs i
 It may ask for your Mac password during system-tool installation. Later launches reuse
 what is installed and open the local panel. No paid service is required.
 
+Copied or incomplete Python environments are backed up under `.venv-old-*` and rebuilt
+automatically. This leaves your `library` untouched. Share the prepared handoff ZIP;
+do not include `.venv` when copying the app to another Mac.
+
 To choose a port from Terminal, run `./"Start Silver Goose.command" --port 8080`.
 If the panel is already running, stop it with Control-C first; another launch reopens it.
 

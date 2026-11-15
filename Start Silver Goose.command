@@ -57,9 +57,14 @@ if [ "$SG_NEED_PYTHON" -eq 1 ] || [ "$SG_NEED_FFMPEG" -eq 1 ]; then
   if [ "$SG_NEED_PYTHON" -eq 1 ]; then brew install python@3.12; SG_PYTHON="$(brew --prefix python@3.12)/bin/python3.12"; fi
   if [ "$SG_NEED_FFMPEG" -eq 1 ]; then brew install ffmpeg; fi
 fi
-# A virtual environment contains absolute paths. Recreate it if this folder was moved.
-if [ -x .venv/bin/python ] && ! .venv/bin/python -c 'import sys,pathlib; assert pathlib.Path(sys.prefix).resolve()==pathlib.Path(".venv").resolve()' >/dev/null 2>&1; then
-  mv .venv ".venv-old-$(date +%s)"
+# A copied or interrupted environment may contain dangling interpreter links.
+# Move it aside before venv creation; venv does not repair those links in place.
+if [ -e .venv ] || [ -L .venv ]; then
+  if [ ! -x .venv/bin/python ] || ! .venv/bin/python -c 'import sys,pathlib,pip; assert (3,11) <= sys.version_info[:2] < (3,14); assert sys.prefix != sys.base_prefix; assert pathlib.Path(sys.prefix).resolve()==pathlib.Path(".venv").resolve()' >/dev/null 2>&1; then
+    echo 'Repairing the local Python environment…'
+    SG_OLD_ENV="$(mktemp -d "$SG_ROOT/.venv-old-XXXXXXXX")"
+    mv .venv "$SG_OLD_ENV/environment"
+  fi
 fi
 if [ ! -x .venv/bin/python ]; then "$SG_PYTHON" -m venv .venv; fi
 SG_ENV_PYTHON="$SG_ROOT/.venv/bin/python"

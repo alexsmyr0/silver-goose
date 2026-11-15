@@ -2,6 +2,10 @@
 
 ## Results
 
+- **4 launcher recovery tests passed** with real offline virtual-environment creation in
+  temporary folders containing spaces. Covers broken interpreter links (reproducing John's
+  exact error), missing pip, a dangling environment directory link, and reuse on a second
+  launch. Broken environments are preserved and library contents remain unchanged.
 - **23 core tests passed** in a disposable library. The original 22 also passed using the fresh launcher's
   isolated Python environment. Covers cross-process IDs and locks, request-local content
   selection, traversal/symlink refusal, corrupt-data handling, atomic uploads, text edits,
@@ -64,6 +68,7 @@ From this repository, with the required Python packages installed:
 
 ```sh
 python3 tests/test_core.py
+python3 tests/test_launcher.py
 python3 -m compileall -q source
 node --check source/static/app.js
 bash -n 'Start Silver Goose.command'

@@ -88,6 +88,9 @@ cards, logo pairs, the font and emoji settings. Video ingredients and their save
 assignments are empty.
 
 The launcher detects missing dependencies; it asks before installing system tools.
+It validates the private Python environment, including its interpreter, location and pip.
+Broken or incomplete environments are moved under a unique `.venv-old-*/environment`
+backup before recreation. This does not reinstall system Python/FFmpeg or modify `library`.
 Python packages are installed inside this folder, native helpers compiled on this Mac,
 and missing Apple speech assets prepared through the official system API. First setup
 needs internet. Runtime recognition and rendering run locally. No automatic upgrades,
