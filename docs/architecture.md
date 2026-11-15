@@ -13,6 +13,14 @@ normalization, typography, recipe selection and successful-build allowances rema
 production owners. The local server, paths, history adapter, asset editing, launcher and
 batch coordinator are Silver Goose code. No Golden Goose modules are imported at runtime.
 
+The silent formats (line, card, compare) were re-synced on 15 November 2026 with Golden
+Goose's builder at `3aec2164`, including `micro_repurpose.py`, `silent_build_plan.py`,
+`silent_batch_plan.py` and `builder_variation.py`, which stay copies of Golden Goose's files.
+Left out on purpose: accounts, footage locks, campaigns and Golden Goose's tutorial caption
+system. Every tutorial is treated as already captioned, so it is fitted inside the frame,
+never cropped, and the zoom and shift still cover the whole video. Per-tutorial pairing and
+the use limit on opening lines and comparison wording were removed, as in Golden Goose.
+
 ## Ownership
 
 | Area | Entry points |
@@ -24,9 +32,10 @@ batch coordinator are Silver Goose code. No Golden Goose modules are imported at
 | Paths and explicit initialization | `source/paths.py` |
 | Successful-build history / unique IDs | `source/manifest.py`, `source/ledger_lock.py` |
 | Assets / text editing | `source/assets.py`, `source/csvfile.py` |
-| Tutorials and compatibility | `source/tutorial_libraries.py`, `source/pairing.py` |
+| Tutorials and content types | `source/tutorial_libraries.py` |
 | Reuse quantities / wording budgets | `source/formula.py`, `source/wording_allowances.py` |
-| Silent formats | `source/make_videos.py` |
+| Silent formats | `source/make_videos.py`; exact combinations `source/silent_build_plan.py`, `source/silent_batch_plan.py`; spreads `source/builder_variation.py` |
+| Micro changes (zoom/shift, speed, tint, song start) | `source/micro_repurpose.py` (silent formats only so far) |
 | Farm variants | `source/make_farm.py`, `source/make_mcp_farm.py` |
 | Hook Story | `source/reaction*.py`, `source/make_reaction.py` |
 | Bottle spin | `source/tutorial_story*.py`, `source/make_tutorial_story.py` |

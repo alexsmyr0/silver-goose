@@ -13,11 +13,10 @@ def capacity(fmt):
     catalog.require(fmt, paths.product())
     ensure_font(paths.ASSETS)
     if fmt in MV.FORMATS:
-        pools = MV.pools_now()
         folder = paths.asset(MV.FORMAT_SOURCE[fmt])
         scenes = [
             p
-            for p in MV.clips_in(folder)
+            for p in MV.usable_scenes(MV.clips_in(folder))
             if not MV.hook_wrong_length(MV.duration(p), fmt)
         ]
         if not scenes:
@@ -26,25 +25,14 @@ def capacity(fmt):
                 if fmt == "card"
                 else "opening scenes (at least 4.2 seconds)."
             )
-        if not MV.usable_tutorials(fmt, pools=pools):
-            return 0, "Assign a matching tutorial and its logo pair in Assets."
-        if not MV.logo_pairs(paths.ASSETS)[0]:
-            return 0, "Add a complete OpenArt/Shorts logo pair."
-        if not os.path.isfile(paths.asset(MV.song_for(fmt))):
-            return 0, "Add music for this format."
-        if not MV.read_emoji(paths.asset("emoji.txt")):
-            return 0, "Add emoji in Assets → Common."
-        if not MV.csvfile.read(paths.data("money_cards.csv"))[0]:
-            return 0, "Add money card amounts in Assets."
-        rows = M.read_rows()
-        uses = M.scene_uses(rows)
-        tu = MV.tutorial_uses(rows)
-        left = sum(
-            MV.left_for(os.path.basename(n), fmt, uses, tu, pools=pools) for n in scenes
-        )
-        if fmt != "card":
-            left = min(left, MV.wording_room(fmt, pools))
-        return left, "" if left else "Add fresh scenes, tutorials or enabled wording."
+        # The same exact-combination owner the builder picks from: scene and tutorial
+        # allowances, unused visible covers, card recipes and supporting assets.
+        plan = MV.build_plan(M.read_rows())
+        if plan.blockers.get(fmt):
+            return 0, plan.blockers[fmt]
+        names = [os.path.basename(p) for p in scenes]
+        left = sum(plan.count(name, fmt) for name in names)
+        return left, "" if left else plan.reason(names[0], fmt)
     if fmt in MF.FARM_VARIANTS:
         root = MF.asset_root(fmt)
         scenes, _ = MF.scenes_in(paths.asset(root + "/scenes"))

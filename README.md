@@ -66,10 +66,15 @@ Its build history and reuse counts are preserved. Moving it back restores its ca
 ## Assets
 
 Add prepared clips in Assets; preview or remove files, edit wording and music settings,
-assign tutorials to a content type, and choose tutorial folders and logo/comparison
-pairings. Build settings control reuse quantities. Assets → Common holds font, logos,
-base music, emoji, post captions, and caption vocabulary/corrections.
+assign tutorials to a content type, and choose tutorial folders. Build settings control
+reuse quantities. Assets → Common holds font, logos, base music, emoji, post captions,
+and caption vocabulary/corrections.
 
+- Line, then card / Card only / Tick and cross: tutorials are used exactly as uploaded, so
+  burn their captions in first. A tutorial that is not 9:16 is fitted with bars, never
+  cropped. Every tutorial can appear with every logo pair and wording. Opening lines and
+  tick-and-cross wording have no use limit; untick one to stop using it. Each video also
+  gets a slight zoom and shift, small speed changes, a gentle tint and a later song start.
 - Speaking pairs: upload both `take-1-a.mp4` and `take-1-b.mp4` together.
 - AI LARP: `larp-1.mp4` is the original; `larp-1-ai-1.mp4` is its AI version.
   Supply the AI footage yourself. Silver Goose assembles it; it does not generate it.

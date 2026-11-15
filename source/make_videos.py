@@ -41,50 +41,56 @@ and the line is on screen longer; the build-up is always the same five beats.
 
   python3 make_videos.py --make 6
   python3 make_videos.py --make 3 --assets /some/test/assets --out /some/test/out
+
+SILVER GOOSE PORT, 15 Nov 2026. This is Golden Goose's builder as of commit 3aec2164, with
+the parts that belong to Golden Goose's accounts, campaigns, footage locks and tutorial
+caption system left out. Every tutorial is treated as already carrying burned-in captions:
+it is fitted inside the frame rather than cropped (`PRESERVE_TUTORIAL_PICTURE`), and the
+zoom and shift still cover the whole video, as Golden Goose does for such tutorials.
 """
 import argparse, json, os, random, shutil, time
 
 import csvfile
-from builder_support import int_or, wrap, pick_spread
+from builder_support import int_or, wrap
+import builder_variation as BV
 import wording_allowances as WA
 import video_encode as VE
 import encode as E
-# Existing builder entry points remain available to scripts and fixtures.
-from render_support import (
-    ensure_font, ensure_renderer, run, die,
-)
+from render_support import ensure_font, ensure_renderer, run, die
 
 # HOW MANY VIDEOS A SCENE IS WORTH, and the sentence that says so. It is a setting on the
 # panel's Settings tab since 6 Sep 2026 rather than a constant here - see formula.py.
 import formula as FM
 
+import catalog
 import manifest as M
 
 import paths
 import tutorial_libraries as TL
 
-# WHICH LOGO PAIRS AND WHICH TICK-AND-CROSS WORDINGS EACH TUTORIAL MAY USE - Steven's ask,
-# 6 Sep 2026. The rule lives there and nowhere else: it decides both what this file PICKS and
-# what a scene is worth, and the panel reads the same functions. See pairing.py.
-import pairing as PR
-
 # OpenArt's settings live in one profile shared with the farm. It delegates filter building
 # and frame-rate safety to repurpose.py, while keeping Pump's existing settings separate.
 import poolpick as PP
 import openart_repurpose as RP
+# The four changes every video carries, and their ranges - see micro_repurpose.py.
+import micro_repurpose as MR
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 WORK = paths.WORK
 
+# Silver Goose tutorials arrive with their captions burned in, so the picture is fitted inside
+# the 1080x1920 canvas and padded rather than cropped: cropping could cut off the lettering.
+# Golden Goose does the same for a tutorial reviewed as already captioned. A 9:16 tutorial
+# fills the frame either way; only another shape shows the difference, as bars.
+PRESERVE_TUTORIAL_PICTURE = True
+
 # The hook lines and the money amounts live in CSVs you can open and edit. hook_lines.csv is
 # also where each line's use count is KEPT - the tool reads it, counts up, and writes it back
-# - so opening that file tells you which lines are spent without digging anywhere else.
+# for selection balance and history. Hook lines and comparison pairs never retire by usage.
 LINES_CSV = paths.data("hook_lines.csv")
 # The Instagram caption, chosen when the video is BUILT rather than when it is posted, so
 # the day's batch can spread captions the same way it spreads everything else and Steven
-# never has to think of one. No retirement column: hook lines burn out after ~25 uses and
-# that is measured, but nothing has been measured about captions, so no rule is invented
-# for them - they are only spread.
+# never has to think of one. Captions are spread without retirement.
 CAPTIONS_CSV = paths.data("captions.csv")
 MONEY_CSV = paths.data("money_cards.csv")
 
@@ -164,10 +170,9 @@ MONEY_MIN, MONEY_MAX = 420, 540
 #                     may ever carry the same wording twice - `pick_unused_line` checks it
 #                     against the whole ledger, not just the batch, and the run refuses rather
 #                     than repeating. 7 live lines and 6 live comparison pairs against 4 slots.
-#   the colour grade  NEW, and it is the one that arrived with this raise - `repurpose.LOOKS`,
-#                     the same six the humbled format uses, measured there. On the HOOK only;
-#                     see the note beside `look_for` in `build_one` for why the tutorial is
-#                     left alone.
+#   the colour grade  NEW, and it is the one that arrived with this raise - the gentle tints
+#                     in `openart_repurpose`. On the whole video since 26 Oct 2026 (see
+#                     `micro_repurpose`); the drawn text and cards are never tinted.
 #   the tutorial      Two of them, alternated, so a scene's four go A B A B.
 #   the money figure  and the logo pair, both spread least-used-first.
 #
@@ -250,8 +255,8 @@ def pools_now(assets=None):
     """Everything the per-tutorial allowance is counted against, read fresh, ONCE.
 
     `left_for` is asked per scene per format - twenty-odd scenes on the Assets tab, and again
-    on the Builder tab - and every one of those calls needs the same three lists and the same
-    pairing store. Passing this in turns four reads per scene into four reads per page. It is
+    on the Builder tab - and every call needs the same ingredient inventories. Passing this
+    in avoids repeated folder reads per scene. It is
     optional everywhere: leave it out and each call reads for itself, which is what the CLI
     does and what keeps a caller that forgets it correct rather than stale.
     """
@@ -260,28 +265,20 @@ def pools_now(assets=None):
             "tutorials_by_format": {f: tutorial_names(A, f) for f in FORMATS},
             "library_by_format": {f: TL.library_for(f, A) for f in FORMATS},
             "logos": [p["key"] for p in logo_pairs(A)[0]],
-            "compare": compare_ids(),
-            "store": PR.load()}
+            "compare": compare_ids()}
 
 
 def usable_tutorials(fmt, assets=None, pools=None):
-    """The tutorials `fmt` may actually be built with - the pairing applied. `pairing.py` is
-    the rule; this only feeds it the pools as they stand."""
+    """Tutorials assigned to the selected content type, without ingredient restrictions."""
     p = pools or pools_now(assets)
-    names = p.get("tutorials_by_format", {}).get(fmt, p["tutorials"])
-    library = p.get("library_by_format", {}).get(fmt, "regular")
-    store = {name: PR.choice(TL.pairing_key(library, name), p["store"]) for name in names}
-    return PR.usable_tutorials(fmt, names, p["logos"], p["compare"], store)
+    return list(p.get("tutorials_by_format", {}).get(fmt, p["tutorials"]))
 
 
 def per_clip(fmt, assets=None, pools=None):
     """How many videos one hook scene is worth IN ALL in `fmt`, today.
 
-    COUNTED OVER THE TUTORIALS THIS FORMAT MAY USE, not every tutorial in the folder, since
-    6 Sep 2026. A tutorial he has untied from every tick-and-cross wording makes no
-    tick-and-cross videos, so counting it would put a number on the Builder tab that the builder
-    then refuses to reach - and "it says 12 left" not matching what came out is the exact
-    complaint the per-tutorial rule was written for.
+    Count only tutorials eligible for this format and content type.
+    Logo and wording choices do not narrow the tutorial pool.
     """
     if fmt in PER_TUTORIAL_FORMATS:
         return line_per_tutorial() * len(usable_tutorials(fmt, assets, pools))
@@ -289,9 +286,9 @@ def per_clip(fmt, assets=None, pools=None):
 
 
 def tutorial_uses(rows=None, assets=None):
-    """{(format, scene key, tutorial file): how many live videos} off the `ok` rows - the
-    per-tutorial formats' own spend, per pair and per format. Counted, never kept: deleting a
-    video hands its pair back."""
+    """{(format, scene key, tutorial file): how many successful builds} off the `ok` rows - the
+    per-tutorial formats' own spend, per pair and per format. Counted off the build history,
+    never kept separately; deleting an output does not refund it (see manifest.py)."""
     out = {}
     libraries = {fmt: TL.library_for(fmt, assets) for fmt in PER_TUTORIAL_FORMATS}
     for r in (M.read_rows() if rows is None else rows):
@@ -314,8 +311,7 @@ def left_for(name, fmt, uses=None, tut_uses=None, assets=None, pools=None):
 
     THE TUTORIALS COUNTED ARE `usable_tutorials`, not the folder listing - so this and
     `per_clip` above are counting the same set, which is what makes "in all minus left" the
-    number of videos actually made (see `plan_slots`). Two different tutorial lists here would
-    put every scene's round count out by however many tutorials he has tied down.
+    number of videos actually made (see `plan_slots`). Both must use the same eligible pool.
     """
     if fmt in PER_TUTORIAL_FORMATS:
         tu = tutorial_uses(assets=assets) if tut_uses is None else tut_uses
@@ -326,6 +322,83 @@ def left_for(name, fmt, uses=None, tut_uses=None, assets=None, pools=None):
         return 0
     u = M.scene_uses() if uses is None else uses
     return max(0, per_clip_n() - M.uses_of(u, name, fmt))
+
+
+def comparison_text(row):
+    return "%s ❌\n%s ✅" % (row.get("bad", "").strip(), row.get("good", "").strip())
+
+
+def supporting_blockers(assets, pools, money_rows, emoji=None):
+    """Required supporting assets, shared by build admission and availability."""
+    emoji = read_emoji(paths.asset('emoji.txt', assets)) if emoji is None else emoji
+    common = ("No complete logo pair. Add a matching pair under Assets." if not pools['logos'] else
+              "No money amounts. Add a money card under Assets." if not money_rows else
+              "No emoji. Add an emoji under Assets." if not emoji else '')
+    return {fmt: (common or ('' if os.path.isfile(paths.asset(song_for(fmt), assets)) else
+                            'Missing the song for %s: %s.' % (FORMAT_NAMES[fmt], song_for(fmt))))
+            for fmt in FORMATS}
+
+
+def money_options(rows):
+    """Every amount pick_money can render, including its existing small variations."""
+    out = []
+    for row in rows:
+        amount = row.get('amount', '').strip()
+        per = (row.get('per') or 'day').strip()
+        out.append('%s/%s' % (amount, per))
+        n = int_or(amount.lstrip('$'), 0)
+        if n and MONEY_FROM_CSV < 1:
+            out.extend('$%d/%s' % (max(50, n + delta), per)
+                       for delta in range(-25, 26) if delta)
+    return list(dict.fromkeys(out))
+
+
+def build_plan(rows=None, *, assets=None, pools=None, line_rows=None, cmp_rows=None,
+               money_rows=None, emoji=None):
+    """The exact combination owner used by the Builder tab's counts and the real picks.
+
+    left_for remains the theoretical footage allowance, including for archive/restore.
+    This snapshot also checks visible-cover history, campaign wording and support assets.
+    Nothing is written and every scoped path is resolved at call time.
+    """
+    from silent_build_plan import SilentBuildPlan
+    import cover_match
+    assets = assets or paths.ASSETS
+    pools = pools if pools is not None else pools_now(assets)
+    rows = M.read_rows() if rows is None else rows
+
+    def live_wording(name):
+        # Only rows John has left switched on; the use count never retires these two pools.
+        path = paths.data(name)
+        return WA.live(WA.read(path)[0], path=path)
+    line_rows = live_wording('hook_lines.csv') if line_rows is None else line_rows
+    cmp_rows = live_wording('compare_lines.csv') if cmp_rows is None else cmp_rows
+    money_rows = csvfile.read(paths.data('money_cards.csv'))[0] if money_rows is None else money_rows
+    libraries = pools.get('library_by_format') or {fmt: TL.library_for(fmt, assets) for fmt in FORMATS}
+    tutorials = {fmt: list(pools.get('tutorials_by_format', {}).get(fmt, pools['tutorials']))
+                 for fmt in FORMATS}
+    logos, wordings = {}, {}
+    for fmt in FORMATS:
+        for tutorial in tutorials[fmt]:
+            logos[fmt, tutorial] = list(pools['logos'])
+            if fmt == 'line':
+                wordings[fmt, tutorial] = [(row, cover_match.line_signature(wrap(row.get('hook_text', '')).replace('\n', ' / ')))
+                                           for row in line_rows if row.get('hook_text', '').strip()]
+            elif fmt == 'compare':
+                wordings[fmt, tutorial] = [(row, cover_match.line_signature(comparison_text(row), '❌/✅'))
+                                           for row in cmp_rows
+                                           if row.get('bad', '').strip() and row.get('good', '').strip()]
+    blockers = supporting_blockers(assets, pools, money_rows, emoji)
+    for fmt in FORMATS:
+        if not blockers[fmt] and not tutorials[fmt]:
+            blockers[fmt] = 'No tutorials assigned to this content type. Assign one in Assets.'
+        if fmt in ('line', 'compare') and not blockers[fmt] and not any(wordings.get((fmt, t)) for t in tutorials[fmt]):
+            blockers[fmt] = ('No opening lines. Add one under Assets.' if fmt == 'line' else
+                             'No tick-and-cross wording. Add one under Assets.')
+    return SilentBuildPlan(rows=rows, tutorials=tutorials, logos=logos, wordings=wordings,
+                           libraries=libraries, scene_key=M.scene_key, signature=cover_match.line_signature,
+                           row_library=TL.row_library, per_tutorial=line_per_tutorial(), per_scene=per_clip_n(),
+                           money=money_options(money_rows), looks=MR.LOOKS, blockers=blockers)
 
 # ---- how far things drift between videos -------------------------------------
 # A few pixels, different every video. Each block moves as ONE piece so the layout never
@@ -355,12 +428,6 @@ SAT_MIN, SAT_MAX = 0.005, 0.01
 # would be. It does mean turning a format on gives every clip you already have more videos in
 # it; the run says so plainly rather than quietly tripling the output.
 
-# ---- a line is spent after this many uses ------------------------------------
-# From the research: a hook line has about twenty-five good uses in it. Past that it
-# performs no better than having no hook at all.
-LINE_RETIRE_AT = 25
-
-
 def duration(path):
     r = run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
              "-of", "default=noprint_wrappers=1:nokey=1", path])
@@ -372,18 +439,18 @@ def duration(path):
 clip_fps = E.clip_fps
 
 
-def speeds_for(hook, fmt, raw_len=None):
-    """Which speeds this hook clip may run at, in this format. Never empty - 1.00x always.
+def draw_hook_speed(hook, fmt, raw_len=None):
+    """This hook clip's speed for one video, drawn by `micro_repurpose` (1-3% either way).
 
     TWO SEPARATE TESTS, and both are needed.
 
-    **No frame may be held.** `repurpose.speeds_for` is the whole of that rule and the
+    **No frame may be held.** `micro_repurpose.floor_for_fps` is the whole of that rule and the
     measurement behind it: a clip may only be SLOWED while `speed >= FPS / src_fps`, so a 60fps
-    scene gets all five and a 30fps one gets 1.00x and faster. Speeding up costs nothing on any
+    scene may go either way and a 30fps one only faster. Speeding up costs nothing on any
     source - it takes a different set of frames rather than repeating one.
 
     **The clip must still be a legal length for the format afterwards**, which is the half that
-    does not apply on humbled and does here. Speed changes the hook's PLAYED length, and the
+    did not apply on the retired Humbled format and does here. Speed changes the hook's PLAYED length, and the
     hook's played length is the cut, the song's start and the whole beat grid:
 
       line     needs `hook_len - 5 beats` to leave room for the line, so speeding up too far
@@ -391,29 +458,56 @@ def speeds_for(hook, fmt, raw_len=None):
       card     must stay under Mist's 2.468s run-up, so SLOWING is what breaks that one.
       both     `song_start` is `drop - hook_len` and may not go negative.
 
-    Rather than let a build fail on a speed the picker chose, the illegal ones are simply not
-    offered. `hook_wrong_length` is asked, so there is one answer to "may this clip be this
-    long" and this function does not hold a second copy of the three rules.
+    Rather than let a build fail on a speed the draw chose, the illegal ones are simply not
+    drawn. `hook_wrong_length` is asked, so there is one answer to "may this clip be this
+    long" and this function does not hold a second copy of the three rules. Only a clip with
+    no legal speed in range at all (a 30fps scene right at its format's length limit) keeps
+    1.00x.
     """
     if raw_len is None:
         raw_len = duration(hook)
     if raw_len <= 0:
-        return [1.0]
-    out = []
-    for v in RP.speeds_for(clip_fps(hook), FPS):
+        return 1.0
+
+    def legal(v):
         played = raw_len / v
-        if hook_wrong_length(played, fmt):
-            continue
-        if drop_for(fmt) - round(played * FPS) / FPS < 0:
-            continue
-        out.append(v)
-    return out or [1.0]
+        return (not hook_wrong_length(played, fmt)
+                and drop_for(fmt) - round(played * FPS) / FPS >= 0)
+    return MR.draw_speed("opening", floor=MR.floor_for_fps(clip_fps(hook), FPS), legal=legal)
+
+
+def head_trim_frames(hook_len, fmt, song_shift):
+    """How many frames to take off the front of the hook so the song starts later.
+
+    The drop must land on the cut, and the song starts at (drop - cut), so the only way to
+    start the song later without moving the drop is to start the scene later: every frame
+    taken off the front moves the song's start 1/30s further in. Fewer frames are taken when
+    the full amount would make the hook too short for its format."""
+    frames = max(0, int(round(float(song_shift or 0) * FPS)))
+    while frames and hook_wrong_length(round(hook_len * FPS - frames) / FPS, fmt):
+        frames -= 1
+    return frames
 
 
 def clips_in(folder, exts=(".mp4", ".mov", ".m4v")):
     if not os.path.isdir(folder): return []
     return sorted(os.path.join(folder, f) for f in os.listdir(folder)
                   if f.lower().endswith(exts) and not f.startswith("."))
+
+
+def usable_scenes(files):
+    """The scenes in `files` to build with, in the same order, one per scene.
+
+    Silver Goose has no accounts, so no footage is locked away (Golden Goose's footage locks
+    are not part of it); the builder and the Builder tab's counts both ask this function.
+    """
+    files = list(files)
+    # A .mov and .mp4 with the same scene key share every allowance and cover.
+    # Offering both would count that one allowance twice before the first render.
+    distinct = {}
+    for path in files:
+        distinct.setdefault(M.scene_key(os.path.basename(path)), path)
+    return list(distinct.values())
 
 
 def read_lines(path):
@@ -455,7 +549,7 @@ LOGO_EXT = (".png", ".jpg", ".jpeg", ".webp")
 #
 # Adding a fourth picture later is this line and nothing else. When OpenArt replaced Claude
 # (27 Aug 2026) this prefix turned out to be hardcoded in THREE separate places - here, again
-# in `dashboard.logo_key`, and a third time as a regex in the page's own JavaScript. A file
+# in the panel's old `logo_key`, and a third time as a regex in the page's own JavaScript. A file
 # named `openart-1.png` was therefore not a logo at all, and the only thing the tool would
 # have said about it is "No complete logo pair", naming a file that was sitting right there.
 LOGO_LEFT = ("child", "openart")
@@ -469,7 +563,7 @@ LOGO_RIGHT = ("shorts", "airbnb")
 # THE RIGHT-HAND PICTURE A PAIR'S NAME DOES NOT MENTION. A pair is named after its left-hand
 # file - `openart-1` - and that was every pair's whole name while `shorts` was the only thing
 # on the right. Those names are in the ledger's `logo_pair` column on 158 videos and in
-# `data/tutorial_pairing.json`, so they must not change: a pair whose right-hand half is
+# historical recipes, so they must not change: a pair whose right-hand half is
 # `shorts` is still just `openart-1`, and only the pictures that arrived later add their name
 # to it (`openart-3+airbnb2`). Exactly the reason `LOGO_LEFT_WAS` exists - a name that is
 # already written down somewhere is not free to be tidied.
@@ -607,7 +701,7 @@ def logo_pair_key(name):
 
 def pair_key(left, right):
     """What the PAIR of these two files is called - the ledger's `logo_pair`, the name on the
-    Assets tab, and what `pairing.py` ties a tutorial to.
+    Assets tab and historical recipe usage.
 
     The left-hand file names it, as it always has. The right-hand PICTURE is added when it is
     not the one every existing pair carries - see `LOGO_RIGHT_IMPLIED`. So the four pairs
@@ -750,28 +844,14 @@ def logo_pairs(A):
     return pairs, [P(x["name"]) for x in lonely], shadowed
 
 
-def wording_room(fmt, pools=None):
-    """Remaining text uses for the selected account, shared by Builder and its worker."""
-    name = 'hook_lines.csv' if fmt == 'line' else 'compare_lines.csv'
-    rows, _ = WA.read(paths.data(name))
-    if fmt == 'compare' and pools is not None:
-        ids = {str(r.get('id', '')).strip() for r in WA.live(rows)}
-        allowed = set()
-        library = pools.get('library_by_format', {}).get(fmt, 'regular')
-        for tut in usable_tutorials(fmt, pools=pools):
-            allowed.update(PR.compare_for(TL.pairing_key(library, tut), sorted(ids), pools['store']))
-        rows = [r for r in rows if str(r.get('id', '')).strip() in allowed]
-    return WA.remaining(rows)
-
-
 def check_assets(A, want_formats=None):
     """Everything the tool needs, checked up front, so it fails with a sentence you can act
     on instead of halfway through a batch."""
     problems = []
     # Two folders of scenes, because the card format is a different length of video with a
     # different song under it - see FORMAT_SOURCE.
-    hooks = clips_in(paths.asset("hooks", A))
-    shorts_scenes = clips_in(paths.asset("hooks_short", A))
+    hooks = usable_scenes(clips_in(paths.asset("hooks", A)))
+    shorts_scenes = usable_scenes(clips_in(paths.asset("hooks_short", A)))
     tuts = {f: [os.path.join(TL.folder_for(f, A), n) for n in tutorial_names(A, f)]
             for f in (want_formats or FORMATS)}
     if not hooks and not shorts_scenes:
@@ -780,21 +860,11 @@ def check_assets(A, want_formats=None):
         problems.append("No tutorials assigned to the selected content type. Assign tutorials in Assets → Tutorial libraries.")
 
     pairs, lonely, shadowed = logo_pairs(A)
-    if not pairs:
-        problems.append("No complete logo pair - assets/logos/ needs a %s AND a %s. "
-                        "They are used as a pair, so one without the other cannot be used."
-                        % (" or a ".join("%s-1.png" % p for p in LOGO_LEFT),
-                           " or a ".join("%s-1.png" % p for p in LOGO_RIGHT)))
-
     song = paths.asset("song.m4a", A)
-    if any(f in ('line', 'compare') for f in (want_formats or FORMATS)) and not os.path.exists(song):
-        problems.append("Missing the song - expected at assets/song.m4a")
-    if 'card' in (want_formats or FORMATS) and not os.path.exists(paths.asset("song_short.m4a", A)):
-        problems.append("Missing the card format's song - expected at assets/song_short.m4a "
-                        "(Mist). Short scenes cannot be built without it.")
-
     emoji = read_emoji(paths.asset("emoji.txt", A))
-    if not emoji: problems.append("No emoji - put one per line in assets/emoji.txt, e.g.  X 50")
+    support = supporting_blockers(A, {'logos': [pair['key'] for pair in pairs]},
+                                  csvfile.read(paths.data('money_cards.csv'))[0], emoji)
+    problems.extend(dict.fromkeys(support[fmt] for fmt in (want_formats or FORMATS) if support[fmt]))
 
     if problems: die("Cannot build yet:\n\n  - " + "\n  - ".join(problems))
     if lonely:
@@ -891,7 +961,14 @@ def hook_wrong_length(hook_len, fmt):
 
 
 def build_one(out_path, hook, tut, line, emoji, money, A, font, renderer, tmp,
-               claude_logo, shorts_logo, fmt="line", look="plain", speed=1.0, mark=""):
+               claude_logo, shorts_logo, fmt="line", look="plain", speed=1.0, mark="",
+               tutorial_speed=1.0, song_shift=0.0):
+    """One video. `speed` is the hook's, `tutorial_speed` the tutorial's, and `song_shift`
+    (seconds, later only) starts the song later by starting the scene later; see
+    `head_trim_frames`. Production draws all of them from `micro_repurpose`.
+
+    The tutorial is used exactly as it is on disk, captions and all: Golden Goose's caption
+    preparation and verification are not part of Silver Goose."""
     from storage_guard import require_space
     require_space(os.path.dirname(out_path))
     def drift():
@@ -903,13 +980,20 @@ def build_one(out_path, hook, tut, line, emoji, money, A, font, renderer, tmp,
     # the cut, which is the one thing this format is measured on.
     raw_len = duration(hook)
     hook_len = raw_len / speed if speed else raw_len
-    tut_len = duration(tut)
+    preserve_picture = PRESERVE_TUTORIAL_PICTURE
+    # The tutorial's own small speed change, measured against the file actually rendered.
+    if tutorial_speed != 1:
+        tutorial_speed = MR.fit_speed(tutorial_speed, MR.floor_for_fps(clip_fps(tut), FPS))
+    tut_len = duration(tut) / tutorial_speed
     if hook_len <= 0 or tut_len <= 0:
         return False, "", "", "could not read one of the clips"
 
     why = hook_wrong_length(hook_len, fmt)
     if why:
         return False, os.path.basename(hook), "", why
+    # THE SONG'S START, moved later by starting the scene a few frames in. See `head_trim_frames`.
+    head = head_trim_frames(hook_len, fmt, song_shift)
+    hook_len -= head / FPS
 
     g = beat_grid(hook_len, fmt)
     if g["song_start"] < 0:
@@ -940,7 +1024,7 @@ def build_one(out_path, hook, tut, line, emoji, money, A, font, renderer, tmp,
     hook_sat = nudged_sat()
     tut_sat = nudged_sat()
 
-    def fit(sat, look=None, speed=1.0):
+    def fit(sat, look=None, speed=1.0, preserve=False):
         """One clip, squared up to the canvas, graded, and re-timed if it is being re-timed.
 
         THE GRADE AND THE NUDGE SHARE ONE `eq`. The look's saturation is MULTIPLIED by the
@@ -948,8 +1032,8 @@ def build_one(out_path, hook, tut, line, emoji, money, A, font, renderer, tmp,
         twice for a number that is the product either way.
 
         `setpts` BEFORE `fps`, so the retime happens on the source's own frames and the 30fps
-        resample then picks from them - the same order, and the same reason, as
-        `make_humbled.render_opening`. Nothing invented, nothing dropped.
+        resample then picks from them - the order measured on the retired Humbled opening
+        (docs/history/pump.md). Nothing invented, nothing dropped.
 
         THE OVERLAYS ARE NOT IN HERE and that is what makes the grade safe. The line, the money
         card and the two logos are drawn over the CONCATENATED video further down, so a hue
@@ -959,15 +1043,21 @@ def build_one(out_path, hook, tut, line, emoji, money, A, font, renderer, tmp,
         l_sat, l_gam, l_con, l_hue = RP.LOOKS.get(look or "plain", RP.LOOKS["plain"])
         retime = "setpts=PTS/%.4f," % speed if speed != 1.0 else ""
         hue = ",hue=h=%.1f" % l_hue if l_hue else ""
-        return ("scale=1080:1920:force_original_aspect_ratio=increase,"
-                "crop=1080:1920,setsar=1,%sfps=%d,"
+        # Select output frames before resizing; the discarded source frames need no scaling.
+        resize = ("scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2"
+                  if preserve else "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920")
+        return ("%sfps=%d,%s,setsar=1,"
                 "eq=saturation=%.4f:gamma=%.4f:contrast=%.4f%s,format=yuv420p"
-                % (retime, FPS, l_sat * sat, l_gam, l_con, hue))
+                % (retime, FPS, resize, l_sat * sat, l_gam, l_con, hue))
 
     # Every overlay ends with lt(t,cut) - LESS THAN, never between(). between() includes its
     # end, so the caption survives onto the first frame of the tutorial.
+    mark_filter = RP.mark_vf(*RP.parse_mark(mark), w=1080, h=1920) if mark else 'null'
+    tail = '[v4]%s[v5]' % mark_filter
+    # The tutorial wears the same look as the hook, so the colour change covers the whole
+    # video; the drawn overlays still go on after it and keep their own colours.
     fc = (
-        "[0:v]%s,trim=end=%.5f,setpts=PTS-STARTPTS[h];"
+        "[0:v]%s,trim=start_frame=%d,setpts=PTS-STARTPTS,trim=end=%.5f,setpts=PTS-STARTPTS[h];"
         "[1:v]%s,setpts=PTS-STARTPTS[t];"
         "[h][t]concat=n=2:v=1:a=0[base];"
         "[base][2:v]overlay=0:0:enable='lt(t,%.4f)'[v1];"
@@ -979,11 +1069,12 @@ def build_one(out_path, hook, tut, line, emoji, money, A, font, renderer, tmp,
         # and that makes no two renders the same picture. Added 6 Sep 2026 (Steven: every
         # format carries the small changes). Never read back: these covers are matched on
         # their TEXT. `null` when there is none, so the graph always ends on [v5].
-        "[v4]%s[v5];"
+        "%s;"
         "[6:a]atrim=0:%.4f,asetpts=PTS-STARTPTS,afade=t=out:st=%.4f:d=0.12[a]"
-        % (fit(hook_sat, look, speed), hook_len, fit(tut_sat), g["line_out"],
+        % (fit(hook_sat, look, speed), head, hook_len,
+           fit(tut_sat, look, tutorial_speed, preserve=preserve_picture), g["line_out"],
            g["claude_in"], g["cut"], g["shorts_in"], g["cut"], g["money_in"], g["cut"],
-           (RP.mark_vf(*RP.parse_mark(mark), w=1080, h=1920) if mark else "null"),
+           tail,
            total, max(total - 0.12, 0))
     )
     cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
@@ -999,7 +1090,8 @@ def build_one(out_path, hook, tut, line, emoji, money, A, font, renderer, tmp,
            ] + E.audio_args() + ["-movflags", "+faststart",
            "-t", "%.4f" % total, out_path]
     r = VE.run(cmd, runner=run, label=fmt)
-    if r.returncode != 0 or not os.path.exists(out_path):
+    # Not merely "exists": the number's reservation is an empty file at this path.
+    if r.returncode != 0 or not os.path.isfile(out_path) or not os.path.getsize(out_path):
         return False, os.path.basename(hook), "", ("ffmpeg failed: " + r.stderr[-300:]).strip()
 
     # The recipe is free text for Steven to read back later, so it names only the parts this
@@ -1008,7 +1100,8 @@ def build_one(out_path, hook, tut, line, emoji, money, A, font, renderer, tmp,
     bits = ["%s + %s" % (os.path.basename(hook), os.path.basename(tut)),
             "format: %s" % FORMAT_NAMES.get(fmt, fmt),
             "cut %.2fs on the drop" % g["cut"],
-            "%s from %.2fs" % (song_for(fmt), g["song_start"])]
+            "%s from %.2fs%s" % (song_for(fmt), g["song_start"],
+                                 " (scene from frame %d)" % head if head else "")]
     if fmt != "card":
         bits.append("line: %s" % line.replace("\n", " / "))
     if fmt == "line":
@@ -1021,7 +1114,9 @@ def build_one(out_path, hook, tut, line, emoji, money, A, font, renderer, tmp,
     # two videos are really the same video, and it strips it off the END. Anything appended
     # after `sat` would leave that drift in the string, and then two videos that differ by
     # nothing but an invisible nudge would pass the test that exists to catch them.
-    bits.append("look %s at %s%s" % (look or "plain", RP.speed_key(speed), (" mark " + mark) if mark else ""))
+    bits.append("look %s at %s, tutorial %s%s" % (look or "plain", RP.speed_key(speed),
+                                                  RP.speed_key(tutorial_speed),
+                                                  (" mark " + mark) if mark else ""))
     bits.append("sat %.3f/%.3f" % (hook_sat, tut_sat))
     return True, os.path.basename(hook), " | ".join(bits), ""
 
@@ -1276,15 +1371,35 @@ def seed_compare_csv(path):
     if os.path.exists(path): return
     rows = [
         {"id": "1", "bad": "Part time job", "good": "Claude + Kids YT", "tier": "observed",
-         csvfile.USES_COL: "0", "retire_at": "25",
+         csvfile.USES_COL: "0", "retire_at": "",
          "note": "Seen on the reference account. No view count of its own - "
                  "the comparison format overall ran a 6.5% hit rate over 46 reels."},
         {"id": "2", "bad": "Part time job", "good": "Kids YouTube + AI", "tier": "observed",
-         csvfile.USES_COL: "0", "retire_at": "25",
+         csvfile.USES_COL: "0", "retire_at": "",
          "note": "Seen on the reference account, same day as id 1."},
     ]
     csvfile.write(path, rows, ["id", "bad", "good", "tier", csvfile.USES_COL, "retire_at", "note"],
                   False)
+
+
+def supporting_spreads(rows):
+    """Shared support pools remember successful builds across runs.
+
+    Silver Goose has one library and no accounts, so every successful row counts, and a
+    scene's last tutorial in a format is whichever it was last built with."""
+    rows = BV.successful_rows(rows, FORMATS)
+    tutorials, logos, last_tut = [], [], {}
+    for row in rows:
+        fmt = (row.get('format') or '').strip()
+        name = (row.get('tutorial') or '').strip()
+        if name:
+            identity = (TL.row_library(row), os.path.basename(name))
+            tutorials.append(identity)
+            last_tut[(M.scene_key(row.get('scene')), fmt)] = identity
+        pair = (row.get('logo_pair') or '').strip()
+        if pair and fmt != 'compare':
+            logos.append(pair)
+    return BV.LedgerSpread(tutorials), BV.LedgerSpread(logos), last_tut
 
 
 def main():
@@ -1298,17 +1413,14 @@ def main():
     # The panel asks for an exact number per format now, and "five of one and two of the other"
     # is not something a single total can say. It replaces --make and --formats when given.
     #
-    # One run rather than one run per format, deliberately. The tutorial and logo spreads
-    # (`tut_used`, `logo_used`) are per-run tie-breakers, so building line and compare as two
-    # separate runs would let both reach for the same tutorial - and two runs a minute apart
-    # also stamp two different batch ids on what was one press of one button.
+    # One run rather than one run per format keeps a mixed request's scene planning and
+    # batch identity together. Supporting pools also restore successful history, so the
+    # panel's one-process-per-format batches do not reset tutorial/logo variety each run.
     ap.add_argument("--counts", default="",
                     help="how many of each: line=2,compare=5. Overrides --make/--formats")
     ap.add_argument("--assets", default=paths.ASSETS)
-    # Finished videos land in the Ready pile - "made and not posted yet" - not loose in the
-    # top of the videos folder. Which folder a video is IN is what the posting day is built
-    # from, so a video sitting outside all of them is in no state at all. The parent is still
-    # decided in exactly one place, manifest.py's _videos_dir().
+    # A real build saves each video in its format's folder (`paths.output`); --out is only
+    # used, as one folder, by a test run with --assets.
     ap.add_argument("--out", default=M.VIDEOS)
     a = ap.parse_args()
 
@@ -1336,11 +1448,11 @@ def main():
 
     A = os.path.abspath(a.assets)
     testing = A != paths.ASSETS
+    available_formats = set(want_formats)
     if not testing:
-        import catalog as CP
-        campaign = paths.product()
-        if any(fmt not in CP.formats(campaign) for fmt in want_formats):
-            die("This account does not build those formats. Choose an allowed format in Builder.")
+        available_formats = set(catalog.formats(paths.product())) & set(FORMATS)
+        if any(fmt not in available_formats for fmt in want_formats):
+            die("This content type does not build those formats. Choose an allowed format in Builder.")
     OUTDIR = os.path.abspath(a.out)
     os.makedirs(OUTDIR, exist_ok=True)
 
@@ -1368,74 +1480,35 @@ def main():
         if testing and not os.path.exists(copy) and os.path.exists(real):
             shutil.copy2(real, copy)
 
-    line_rows, line_fields = WA.read(lines_csv)
-    cmp_rows, cmp_fields = WA.read(cmp_csv)
-    cap_rows, cap_fields = csvfile.read(cap_csv)
+    # Use counts come from successful history rows (`wording_allowances.read`); nothing is
+    # written back to these files - the row appended per video IS the record of its spend.
+    line_rows, _line_fields = WA.read(lines_csv)
+    cmp_rows, _cmp_fields = WA.read(cmp_csv)
+    cap_rows, _cap_fields = csvfile.read(cap_csv)
     money_rows, _mf = csvfile.read(MONEY_CSV)
     if not money_rows: die("No money amounts found in %s" % os.path.basename(MONEY_CSV))
-    used_delta = {}          # hook line id -> how many times THIS run used it
-    cmp_delta = {}           # comparison pair id -> same
-    cap_delta = {}           # caption id -> same
     capcol = csvfile.USES_COL
-    if cap_rows and capcol not in cap_fields:
-        cap_fields = list(cap_fields) + [capcol]
 
     # Counted off the ledger, not read out of a running total - see `manifest.scene_uses`.
     # Fresh rows rather than the cached answer: this run is about to spend what it says.
     _ledger = M.read_rows()
     clip_uses = M.scene_uses(_ledger)
 
-    # NEVER BUILD TWO VIDEOS THAT CANNOT BE TOLD APART AFTER THEY ARE POSTED.
-    #
-    # Steven, 26 Aug 2026: "make sure this never happens again". Everything a cover can show is
-    # the LINE and the SCENE - the words printed on it and the footage behind them - so two
-    # videos sharing both are the same picture carrying the same words, and no reader, no
-    # threshold and no amount of work on cover_match will ever separate them. `identify` does
-    # the only correct thing and refuses, and Steven gets a question he cannot answer either.
-    #
-    # He had exactly one such pair (final_0040 / final_0051). One is one too many, and the fix
-    # belongs HERE rather than in the reader: a video that cannot be identified should not be
-    # made. Twenty-two lines across fourteen scenes is over three hundred combinations, so this
-    # costs essentially nothing.
-    # Keyed on cover_match.line_signature, NOT on the raw hook_line. The reader strips the
-    # emoji before it compares - it cannot see one - so "getting a job?? 😭" and
-    # "getting a job?? 🤓" are one line to it even though the ledger holds two strings. Guarding
-    # on the raw text would have let exactly that pair through onto one scene and called it
-    # safe.
-    import cover_match as _CM
-    def _sig(scene, hook_line, emoji=""):
-        return (M.scene_key(scene or ""), _CM.line_signature(hook_line, emoji))
-    taken_pairs = {_sig(r.get("scene"), r.get("hook_line") or "", r.get("emoji") or "")
-                   for r in _ledger
-                   if r.get("status") == "ok" and (r.get("hook_line") or "").strip()}
+    # Exact visible-cover and recipe history belongs to build_plan below.
     dup_skipped = []
-    # A SKIPPED SLOT SAYS WHICH KIND OF SKIP IT WAS, because the three want different things
-    # done about them: more lines, more tutorials, or a logo pair put back. They were one list
-    # until 6 Sep 2026 and it printed "add lines" over all of them.
-    spent_skipped, logo_skipped = [], []
+    # Report exhausted scene/tutorial allowances separately from duplicate combinations.
+    spent_skipped = []
 
-    ucol = csvfile.USES_COL
-    if ucol not in line_fields and "line" in want_formats:
-        line_fields = list(line_fields) + [ucol]
-        print("  hook_lines.csv had no use-count column; adding '%s'" % ucol)
-    ccol = csvfile.USES_COL
-    if cmp_rows and ccol not in cmp_fields:
-        cmp_fields = list(cmp_fields) + [ccol]
+    ucol = ccol = csvfile.USES_COL
 
-    def live_rows(rows, col):
-        return [r for r in rows
-                if int_or(r.get(col), 0) < int_or(r.get("retire_at"), LINE_RETIRE_AT)]
-
-    live = live_rows(line_rows, ucol)
-    cmp_live = live_rows(cmp_rows, ccol)
+    live = WA.live(line_rows, path=lines_csv)
+    cmp_live = WA.live(cmp_rows, path=cmp_csv)
     if "line" in want_formats:
-        spent = len(line_rows) - len(live)
         if not live:
-            print('FAIL Line, then card: no opening lines left. Add one or restore a retired line under Assets.')
+            print('FAIL Line, then card: no opening lines. Add one under Assets.')
             want_formats.remove('line')
-        if spent: print("  %d line(s) retired; %d still live" % (spent, len(live)))
     if "compare" in want_formats and not cmp_live:
-        print('FAIL Tick and cross: no pairs left. Add one or restore a retired pair under Assets.')
+        print('FAIL Tick and cross: no pairs. Add one under Assets.')
         want_formats.remove('compare')
     if not want_formats:
         die('None of the requested formats has live wordings left.')
@@ -1458,42 +1531,42 @@ def main():
     tut_uses = tutorial_uses(_ledger, A)
 
     # THE POOLS AS THEY STAND, read once for the whole run - the tutorials, the logo pairs, the
-    # tick-and-cross ids and which of them each tutorial is tied to. Every `left_for` below
+    # tick-and-cross ids. Every `left_for` below
     # takes it, so a batch of twenty asks the disk once instead of once per scene per format.
     pools = pools_now(A)
+    exact_plan = build_plan(_ledger, assets=A, pools=pools, line_rows=live,
+                            cmp_rows=cmp_live, money_rows=money_rows, emoji=emoji)
     # Which tutorials each format may actually use, as PATHS, in the order check_assets found
     # them. `usable_tutorials` answers in file names; the builder needs the path it opens.
     usable_tuts = {}
     for f in list(want_formats):
         ok = set(usable_tutorials(f, A, pools))
         usable_tuts[f] = [t for t in tuts[f] if os.path.basename(t) in ok]
-        # SAID OUT LOUD, because a tutorial that is on disk and never on screen is invisible.
-        # It is not a fault - untying a tutorial from every wording is a choice he can make -
-        # but a run that quietly builds off two of his three tutorials is a run he cannot check.
-        missing = [os.path.basename(t) for t in tuts[f] if os.path.basename(t) not in ok]
-        if missing:
-            print("  %s: not using %s - %s"
-                  % (FORMAT_NAMES.get(f, f), ", ".join(missing),
-                     "not tied to a tick-and-cross wording, or to a logo pair that is still there"
-                     if f == "compare" else "not tied to a logo pair that is still there"))
-        # NOTHING AT ALL TO BUILD WITH, decided here rather than one slot at a time. The two
-        # per-tutorial formats work this out for themselves - no usable tutorial makes their
-        # allowance zero and they get no slots - but `card` is a flat count per scene and would
-        # walk its whole list picking a tutorial from an empty pool. Dropped with a sentence.
         if not usable_tuts[f]:
-            print("  %s: no tutorial is tied to a logo pair that is still there - nothing to "
-                  "build. Open Assets and choose its logo pairs." % FORMAT_NAMES.get(f, f))
+            print("  %s: no eligible tutorials to build with." % FORMAT_NAMES.get(f, f))
             want_formats.remove(f)
     if not want_formats:
-        die("No format has a tutorial it can be built with.\n"
-            "Every tutorial is tied to logo pairs that are no longer in assets/logos/ - open "
-            "the Assets tab, press Choose on each tutorial, and tick the pairs it may use.")
+        die("No format has an eligible tutorial. Assign tutorials to this content type in Assets.")
 
     def per_of(f):
         return per_clip(f, A, pools)
 
+    # Only the exceptional case of identical wording across two formats needs a
+    # joint basket allocation. Ordinary batches retain their established scene rounds.
+    mixed_wordings = None
+    scene_names = {fmt:[os.path.basename(h) for h in scenes_for(fmt)] for fmt in want_formats}
+    if any(exact_plan.has_shared_covers(name, want_formats)
+           for name in set(scene_names.get('line', ())) | set(scene_names.get('compare', ()))):
+        limits = caps or {fmt:sum(exact_plan.count(name,fmt) for name in names)
+                          for fmt,names in scene_names.items()}
+        mixed_wordings = {}
+        for candidate in exact_plan.batch_wording_plan(scene_names,limits):
+            mixed_wordings.setdefault((candidate['scene'],candidate['format']),[]).append(candidate)
+
     def left_of(h, f):
-        return left_for(os.path.basename(h), f, clip_uses, tut_uses, A, pools)
+        if mixed_wordings is not None and f in PER_TUTORIAL_FORMATS:
+            return len(mixed_wordings.get((M.scene_key(os.path.basename(h)),f),()))
+        return exact_plan.count(os.path.basename(h), f)
     for f in want_formats:
         if f in PER_TUTORIAL_FORMATS:
             n_tuts = len(usable_tuts[f])
@@ -1507,17 +1580,18 @@ def main():
     slots = plan_slots({f: scenes_for(f) for f in want_formats}, clip_uses,
                        want_formats, per_of, left_of)
     if not slots:
-        die("Nothing left to build in %s.\n"
-            "Every scene has made its videos in those formats (%s) - add more scenes, or turn "
-            "on another format." % (" and ".join(FORMAT_NAMES.get(f, f) for f in want_formats),
-                                    ", ".join("%d for %s" % (per_of(f), FORMAT_NAMES.get(f, f)) for f in want_formats)))
+        # Said in the build log, with a failing exit, so the panel reports a failed format.
+        reason = '; '.join(dict.fromkeys(exact_plan.reason(os.path.basename(h), f)
+                          for f in want_formats for h in scenes_for(f))) or 'No eligible starting scenes remain.'
+        die("Nothing left to build in %s.\n%s"
+            % (" and ".join(FORMAT_NAMES.get(f, f) for f in want_formats), reason))
 
     batch = time.strftime("%m%d-%H%M")
     tmp = os.path.join(STATE, "render_tmp")
     os.makedirs(tmp, exist_ok=True)
     made = 0
-    last_tut = {}
-    tut_used, logo_used, line_used, cap_used = {}, {}, {}, {}
+    tutorial_spread, logo_spread, last_tut = supporting_spreads(_ledger)
+    line_used, cap_used = {}, {}
 
     # THE COLOUR GRADE AND THE HOOK SPEED - the two levers that arrived with four videos a scene.
     #
@@ -1533,20 +1607,20 @@ def main():
     # wherever it lands, and a scene's four videos are dealt out across formats - so counting
     # them apart would let `line` and `compare` each settle on "warm" and put the same grade on
     # two videos off one scene, which is the exact thing this is here to prevent.
-    look_life, speed_life, money_life, mark_life = {}, {}, {}, {}
-    look_recent, speed_recent, money_recent, mark_recent = [], [], [], []
+    # The speed, the mark and the song's start are drawn fresh for every video instead
+    # (`micro_repurpose`), so they have nothing to spread.
+    look_life, money_life = {}, {}
+    look_recent, money_recent = [], []
     for _r in _ledger:
         if _r.get("status") != "ok" or (_r.get("format") or "").strip() not in FORMATS:
             continue
         for _col, _life, _recent in (("look", look_life, look_recent),
-                                     ("hook_speed", speed_life, speed_recent),
-                                     ("frame_mark", mark_life, mark_recent),
                                      ("money", money_life, money_recent)):
             _v = (_r.get(_col) or "").strip()
             if _v:
                 _life[_v] = _life.get(_v, 0) + 1
                 _recent.append(_v)
-    look_used, speed_used, money_used, mark_used = {}, {}, {}, {}
+    look_used, money_used = {}, {}
 
     # The money figure gets the same scene-level guard as the grade, and for a sharper reason:
     # on the CARD format it is the only text on the screen, so two of a scene's four showing
@@ -1569,38 +1643,12 @@ def main():
     #
     # PER (SCENE, FORMAT), not per scene. A `line` video and a `compare` video off one scene
     # share no drawn element at all, so they may share a grade; four of one format may not.
-    # Six looks against four videos a scene leaves two spare, which is what makes this always possible.
+    # Five tints against four videos a scene leaves one spare, which is what makes this always possible.
     taken_looks = {(M.scene_key(r.get("scene") or ""), (r.get("format") or "").strip(),
                     (r.get("look") or "").strip())
                    for r in _ledger if r.get("status") == "ok"
                    and (r.get("look") or "").strip()}
 
-    # NO TWO VIDEOS MAY BE THE SAME VIDEO - Alex, 26 Aug 2026 - and it is on the COMBINATION,
-    # not on the pixels. `taken_pairs` above already guarantees it for `line` and `compare`,
-    # because no scene may ever carry the same wording twice. **The card format has no wording
-    # at all**, so at four per scene its only differences are the tutorial, the money figure,
-    # the logo pair and the grade - and nothing was checking that any of them actually came out
-    # different. Two tutorials, six money cards, four logo pairs and six looks is 288
-    # combinations, so this refuses almost never; it is here because "almost never" is not the
-    # same as never and the run should say so out loud when it happens.
-    #
-    # The key holds only what a VIEWER can see. The pixel drift and the saturation nudge are
-    # not in it, deliberately - Alex named both as things that "change the pixels while leaving
-    # a video a viewer would call the same". Neither is the speed: `make_humbled` leaves it out
-    # of its own key for the same reason, and a 6% tempo change on footage nobody has seen the
-    # original of is not a difference you could point at.
-    def _combo(scene, fmt, hook_line, emoji, tut, money, pair, look, library=None):
-        return json.dumps([M.scene_key(scene or ""),
-                           fmt,
-                           _sig(scene, hook_line, emoji)[1],
-                           library or pools['library_by_format'][fmt], os.path.basename(tut or ""),
-                           money or "", pair or "", look or "plain"])
-    seen_recipes = {_combo(r.get("scene"), (r.get("format") or "").strip(),
-                           r.get("hook_line") or "", r.get("emoji") or "",
-                           r.get("tutorial") or "", r.get("money") or "",
-                           r.get("logo_pair") or "", r.get("look") or "", TL.row_library(r))
-                    for r in _ledger if r.get("status") == "ok"
-                    and (r.get("format") or "").strip() in FORMATS}
     combo_skipped = []
     # --all means "use up every clip that has videos left in it". There is no reason to hold
     # back: these just sit in a folder until Steven posts them by hand, and a folder of videos
@@ -1628,34 +1676,6 @@ def main():
     if wanted <= 0:
         print("Nothing to build."); return
 
-    # ---- the tick-and-cross wordings a TUTORIAL may carry --------------------------------
-    # Steven, 6 Sep 2026. `pairing.py` holds the ties; these three turn them into rows.
-    def cmp_text(r):
-        # The pair is the format - the bad option on top, the good one underneath - and it is
-        # NOT re-wrapped. Written once here because the pick below and the "has this tutorial
-        # got a wording left for this scene" test have to compare the same string; two spellings
-        # of it would make the test answer for a video that then came out differently worded.
-        return "%s ❌\n%s ✅" % (r.get("bad", "").strip(), r.get("good", "").strip())
-
-    def cmp_rows_for(tut_name):
-        """The LIVE wordings this tutorial may carry, in cmp_live's own order."""
-        ids = set(PR.compare_for(TL.pairing_key(pools['library_by_format']['compare'], tut_name), [str(r.get("id", "")).strip() for r in cmp_live],
-                                 pools["store"]))
-        return [r for r in cmp_live if str(r.get("id", "")).strip() in ids]
-
-    def cmp_free(scene, tut):
-        """Has this tutorial a wording THIS SCENE has not already carried?
-
-        The tutorial is picked before the wording now, so a tutorial with nothing left to say
-        on this scene would take the slot and then have to throw it away - one fewer video, and
-        no sentence about why. Asked first instead, so the pick only ever offers tutorials the
-        scene can finish. Same question `pick_unused_line` asks, asked one step earlier.
-        """
-        for r in cmp_rows_for(os.path.basename(tut)):
-            if _sig(scene, cmp_text(r).replace("\n", " / "), "❌/✅") not in taken_pairs:
-                return True
-        return False
-
     for hook, fmt in slots:
         if made >= wanted: break
         # This format has had its share. `continue`, never `break` - the slots are dealt out
@@ -1663,123 +1683,68 @@ def main():
         if caps and fmt_made.get(fmt, 0) >= caps.get(fmt, 0): continue
         name = os.path.basename(hook)
 
-        # Retired wordings dropped BEFORE the tutorial is picked, because which tutorials are
-        # still worth offering depends on what is left in the pool.
-        if fmt == "compare":
-            cmp_live = live_rows(cmp_live, ccol)
-            if not cmp_live:
-                print('FAIL Tick and cross: no pairs left; continuing the other formats.')
-                continue
-
-        # ---- THE TUTORIAL, AND IT IS PICKED FIRST NOW ------------------------------------
-        # Steven's ask of 6 Sep 2026 ties the logo pairs AND the tick-and-cross wordings to the
-        # tutorial, so the tutorial is what decides both and has to be chosen before either.
-        # Picking a wording first and a tutorial after would let the two contradict each other,
-        # and one of them would then have to be thrown away with the slot.
-        #
-        # A slot skipped below spends a turn of the tutorial and logo spreads. Those are
-        # per-batch tie-breakers and nothing more - the spend that counts is the ledger row,
-        # and a skipped slot writes none - and it is already true of the money, grade, speed
-        # and mark spreads sitting under this. Not a new class of thing.
-        #
-        # KEYED ON (SCENE, FORMAT) for the not-twice-running rule, not on the scene alone.
-        # The allowance is per format and the slots are dealt out round-robin - so with two formats
-        # live, a scene-only key gets toggled by the OTHER format's video sitting between this
-        # scene's two, and the rule then locks each format onto one tutorial for good. Caught on
-        # a real 8-video run at four a scene: all four `line` videos off one scene came out on
-        # tutorial2 and all four `compare` on tutorial1, with two tutorials sitting there. It
-        # was wrong at 2 as well and merely harder to see.
-        free = usable_tuts[fmt]
-        if fmt in PER_TUTORIAL_FORMATS:
-            # ONLY A TUTORIAL THIS SCENE STILL HAS AN ALLOWANCE WITH. The slot exists because
-            # `left_of` said the scene has one left, and that is per (scene, tutorial) - so
-            # the pick is narrowed to the tutorials it is left WITH.
-            free = [t for t in free
-                    if tut_uses.get((fmt, M.scene_key(name), os.path.basename(t)), 0) < line_per_tutorial()]
+        # Pick only recipes from the same exact owner used by availability. Its
+        # matching shares visible covers across the requested formats and tutorial allowances.
+        def tutorial_key(t):
+            return (pools['library_by_format'][fmt], os.path.basename(t))
+        scene_format = (M.scene_key(name), fmt)
+        preferred = [t for t in usable_tuts[fmt] if tutorial_key(t) != last_tut.get(scene_format)] or usable_tuts[fmt]
+        first = tutorial_spread.pick(preferred, key=tutorial_key)
+        order = ([os.path.basename(first)] if first else []) + [os.path.basename(t) for t in usable_tuts[fmt]]
+        prefix = 'c' if fmt == 'compare' else ''
+        def wording_rank(r):
+            return (line_used.get(prefix + str(r.get('id', '')).strip(), 0),
+                    int_or(r.get(ucol), 0))
+        card_choices = []
+        if fmt == 'card':
+            card_choices = exact_plan.card_options(name)
+            candidates = card_choices
+        elif mixed_wordings is not None:
+            candidates = mixed_wordings.get((M.scene_key(name),fmt),[])
+        else:
+            candidates = exact_plan.wording_plan(name, fmt, tutorial_order=order,
+                word_order=lambda tutorial, rows: min(wording_rank(r) for r in rows),
+                formats=available_formats)
+        offered = {item['tutorial'] for item in candidates}
+        free = [t for t in usable_tuts[fmt] if os.path.basename(t) in offered]
         if not free:
-            # ITS ALLOWANCE, not its wordings, and the two want opposite things done about
-            # them - more tutorials against more lines. They were one list saying "add lines"
-            # until 6 Sep 2026, which is the wrong instruction for this half of it.
-            spent_skipped.append(name)
+            dup_skipped.append(name)
             continue
-        if fmt == "compare":
-            free = [t for t in free if cmp_free(name, t)]
-            if not free:
-                dup_skipped.append(name)
-                continue
-        # Spread the tutorials evenly over the batch, and never give the same clip the same one
-        # twice running. Picking at random would happily hand out one tutorial five times in a
-        # row, which defeats the point of having more than one.
-        choices = [t for t in free if t != last_tut.get((name, fmt))] or free
-        tut = pick_spread(choices, tut_used)
-        tut_used[tut] = tut_used.get(tut, 0) + 1
-        last_tut[(name, fmt)] = tut
+        choices = [t for t in free if tutorial_key(t) != last_tut.get(scene_format)] or free
+        tut = tutorial_spread.pick(choices, key=tutorial_key)
+        tutorial_spread.record(tutorial_key(tut))
+        last_tut[scene_format] = tutorial_key(tut)
         tut_name = os.path.basename(tut)
-
-        # ---- THE LOGO PAIR, from the ones THIS TUTORIAL is tied to -----------------------
-        # A PAIR, picked as one thing. Counted before the call, or pick_spread never sees a
-        # used count above zero and just draws at random - the thing it exists to avoid.
-        # Only counted when the video actually SHOWS the logos: the tick-and-cross format
-        # draws none, so counting its pick spends a turn on a video nobody can see it in and
-        # leaves the real spread lopsided (three of one pair against one of the other over six
-        # videos, when the counter itself was level). build_one still needs a pair either way -
-        # it writes all four overlay images every time and switches them off by their timings.
-        #
-        # `allowed` cannot come back empty: `usable_tuts` already dropped every tutorial with
-        # no pair left to it. Guarded anyway, because the alternative to a guard here is a
-        # `pick_spread` that returns None and a stack trace four lines down.
-        allowed = PR.logos_for(TL.pairing_key(pools['library_by_format'][fmt], tut_name), [p["key"] for p in logo_sets], pools["store"])
-        if not allowed:
-            logo_skipped.append(tut_name)
-            continue
-        pair = pick_spread(allowed, logo_used)
-        if fmt != "compare":
-            logo_used[pair] = logo_used.get(pair, 0) + 1
-        chosen_pair = next(p for p in logo_sets if p["key"] == pair)
-
-        # Least-used lines go first, which spreads the wear evenly instead of burning one out.
+        allowed = exact_plan.logos[fmt, tut_name]
+        if fmt == 'card':
+            card_choices = [item for item in card_choices if item['tutorial'] == tut_name]
+            allowed = list(dict.fromkeys(item['pair'] for item in card_choices))
+        pair = logo_spread.pick(allowed)
+        if fmt != 'compare':
+            logo_spread.record(pair)
+        chosen_pair = next(p for p in logo_sets if p['key'] == pair)
         row = None
-        if fmt == "line":
-            live = live_rows(live, ucol)
-            if not live:
-                print('FAIL Line, then card: no opening lines left; continuing the other formats.')
-                continue
-            # Least-used overall, but never the same line twice in one batch while another is
-            # free. Sorting on the lifetime count alone is not enough: once the least-used
-            # lines are all level the sort has nothing left to separate them and happily hands
-            # out the same one again, which is what it did.
-            ranked = sorted(live, key=lambda r: (line_used.get(str(r.get("id", "")).strip(), 0),
-                                                 int_or(r.get(ucol), 0), random.random()))
-            e = pick_emoji(emoji)
-            row, text = pick_unused_line(
-                ranked, lambda c: wrap(apply_emoji(c.get("hook_text", "").strip(), e)),
-                name, taken_pairs, lambda sc, t: _sig(sc, t.replace("\n", " / "), e))
-            if row is None:
-                dup_skipped.append(name)
-                continue
-            line_used[str(row.get("id", "")).strip()] = \
-                line_used.get(str(row.get("id", "")).strip(), 0) + 1
-        elif fmt == "compare":
-            # ONLY THE WORDINGS THIS TUTORIAL IS TIED TO. `cmp_free` above already proved at
-            # least one of them is free on this scene, so `pick_unused_line` finds it.
-            ranked = sorted(cmp_rows_for(tut_name),
-                            key=lambda r: (line_used.get("c" + str(r.get("id", "")).strip(), 0),
-                                           int_or(r.get(ccol), 0), random.random()))
-            row, text = pick_unused_line(
-                ranked, cmp_text,
-                name, taken_pairs, lambda sc, t: _sig(sc, t.replace("\n", " / "), "❌/✅"))
-            if row is None:
-                dup_skipped.append(name)
-                continue
-            line_used["c" + str(row.get("id", "")).strip()] = \
-                line_used.get("c" + str(row.get("id", "")).strip(), 0) + 1
-            e = "❌/✅"
-        else:                                   # card - no line at all, so no pool is spent
-            text, e = "", ""
+        if fmt in PER_TUTORIAL_FORMATS:
+            available = [r for item in candidates if item['tutorial'] == tut_name for r in item['rows']]
+            row = min(available, key=lambda r: (*wording_rank(r), random.random()))
+            if mixed_wordings is not None:
+                candidates.remove(next(item for item in candidates if row in item['rows']))
+            e = pick_emoji(emoji) if fmt == 'line' else '❌/✅'
+            text = wrap(apply_emoji(row.get('hook_text', '').strip(), e)) if fmt == 'line' else comparison_text(row)
+            rid = prefix + str(row.get('id', '')).strip()
+            line_used[rid] = line_used.get(rid, 0) + 1
+        else:
+            text, e = '', ''
+            card_choices = [item for item in card_choices if item['pair'] == pair]
 
         money = pick_money(money_rows, money_life, money_used, money_recent,
                            avoid={m for (sc, f, m) in taken_money
                                   if sc == M.scene_key(name) and f == fmt})
+        if fmt == 'card':
+            possible_money = list(dict.fromkeys(item['money'] for item in card_choices))
+            if money not in possible_money:
+                money = PP.pick(possible_money, money_life, money_used, money_recent)
+            card_choices = [item for item in card_choices if item['money'] == money]
         money_used[money] = money_used.get(money, 0) + 1
         money_recent.append(money)
         taken_money.add((M.scene_key(name), fmt, money))
@@ -1793,63 +1758,53 @@ def main():
             cap_used[str(cap_row.get("id", "")).strip()] = \
                 cap_used.get(str(cap_row.get("id", "")).strip(), 0) + 1
 
-        # OpenArt's six gentle looks; old names remain readable but are not picked anew.
-        # It goes on the HOOK ONLY - see `fit` in `build_one`.
-        free_looks = [l for l in RP.LOOK_NAMES
+        # The five gentle tints that change the picture (`micro_repurpose.LOOKS`); older names
+        # and the untouched one remain readable but are not picked anew. Whole video.
+        possible_looks = list(dict.fromkeys(item['look'] for item in card_choices)) if fmt == 'card' else list(MR.LOOKS)
+        free_looks = [l for l in possible_looks
                       if (M.scene_key(name), fmt, l) not in taken_looks]
         # A guard that can empty the list is a guard that can hang the pick, so it never can -
-        # the same shape `poolpick._stale` uses. It cannot fire while the allowance is under six.
-        look = PP.pick(free_looks or list(RP.LOOK_NAMES),
+        # the same shape `poolpick._stale` uses. It cannot fire while the allowance is under five.
+        look = PP.pick(free_looks or possible_looks,
                        look_life, look_used, look_recent)
         look_used[look] = look_used.get(look, 0) + 1
         look_recent.append(look)
         taken_looks.add((M.scene_key(name), fmt, look))
 
-        # THE HOOK SPEED. Offered only where it costs nothing: no frame held, and the clip
-        # still a legal length for this format afterwards - `speeds_for` is both tests. A 30fps
-        # scene, or one already near its format's length limit, simply gets 1.00x and that is
-        # not a fault.
-        spd_key = PP.pick([RP.speed_key(v) for v in speeds_for(hook, fmt)],
-                          speed_life, speed_used, speed_recent)
-        speed_used[spd_key] = speed_used.get(spd_key, 0) + 1
-        speed_recent.append(spd_key)
-        speed = RP.speed_of(spd_key)
+        # THE OTHER THREE MICRO CHANGES, drawn fresh for this video (`micro_repurpose`): the
+        # hook's speed (no frame held, and still a legal length - see `draw_hook_speed`), the
+        # tutorial's smaller one, the zoom and shift on the composed frame, and a later song
+        # start. Not in `taken_looks`' scene guard: they are invisible by design, so they are
+        # never what makes two of a scene's four different videos.
+        speed = draw_hook_speed(hook, fmt)
+        spd_key = RP.speed_key(speed)
+        tutorial_speed = MR.draw_speed("tutorial", floor=0)     # fitted to the footage in build_one
+        mark = MR.draw_mark()
+        song_shift = MR.draw_song_shift(later_only=True)
 
-        # THE MARK - the zoom and pan on the composed frame, spread like the look and the speed.
-        # See the note above `[v4]%s[v5]` in `build_one`. Not in `taken_looks`' scene guard:
-        # it is invisible by design, so two of a scene's four sharing one is not two videos
-        # that read the same.
-        mark = PP.pick(RP.marks(), mark_life, mark_used, mark_recent)
-        mark_used[mark] = mark_used.get(mark, 0) + 1
-        mark_recent.append(mark)
-
-        combo = _combo(name, fmt, text.replace("\n", " / ") if fmt != "card" else "", e,
-                       tut, money if fmt != "compare" else "",
-                       pair if fmt != "compare" else "", look)
-        if combo in seen_recipes:
-            combo_skipped.append(name)
-            continue
-        seen_recipes.add(combo)
-
+        # RESERVED, not merely read - see `manifest.claim_id`: two builds running at once must
+        # not be handed the same number and overwrite each other's video. A real build saves
+        # into this format's own folder; a test run keeps everything in its --out folder.
         destination = OUTDIR if testing else paths.output(fmt)
-        os.makedirs(destination, exist_ok=True)
         idx, out = M.claim_id(destination)
         out_name = os.path.basename(out)
         try:
             ok, source, recipe, err = build_one(out, hook, tut, text, e, money,
                                                 A, font, renderer, tmp,
                                                 chosen_pair["left"], chosen_pair["right"], fmt,
-                                                look, speed, mark)
+                                                look, speed, mark, tutorial_speed, song_shift)
         except Exception as ex:
             ok, source, recipe, err = False, name, "", str(ex)[:300]
+        except BaseException:
+            # A die() deep in a helper is SystemExit, not an Exception.
+            M.drop_claim(out)
+            raise
 
-        # The same facts as `recipe`, one per column, because the daily batch has to sort and
-        # compare on them to spread the day's posts as widely as possible. A sentence cannot
-        # be sorted. `scenery` is left blank here on purpose: it is Steven's label for a scene,
-        # it can change after a video is built, and it is filled in when the video is planned.
+        # The same facts as `recipe`, one per column, because spreading and counting work on
+        # them. A sentence cannot be sorted.
         tags = {
             "format": fmt,
-            "wording_id": str(row.get("id", "")) if fmt in ("line", "compare") and row is not None else "",
+            "wording_id": str(row.get("id", "")) if fmt in PER_TUTORIAL_FORMATS and row is not None else "",
             "scene": M.scene_key(name),
             "tutorial": os.path.basename(tut),
             "tutorial_library": pools['library_by_format'][fmt],
@@ -1858,22 +1813,21 @@ def main():
             "logo_pair": chosen_pair["key"] if fmt != "compare" else "",
             "emoji": e if fmt == "line" else "",
             "caption": (cap_row.get("caption") or "").strip() if cap_row else "",
-            # Both are columns rather than notes in `recipe` for the same reason every other
-            # pool here is: they are spread least-used-first and the counting comes off these
-            # rows. A sentence cannot be counted. `look` is shared with the two pump formats
-            # and means the same thing in all three - see `manifest.FIELDS`.
+            # Columns rather than notes in `recipe` for the same reason every other pool here
+            # is: they are spread least-used-first and the counting comes off these rows.
             "look": look,
             "hook_speed": spd_key,
             "frame_mark": mark,
         }
-        taken_pairs.add(_sig(name, tags["hook_line"], tags["emoji"]))
-        M.record_result(M.blank_row(
+        ledger_row = M.blank_row(
             video_id="final_%04d" % idx, file=out_name if ok else "",
             source=source, recipe=recipe, batch=batch,
-            status="ok" if ok else "FAIL",
-            error=err or "", **tags), out)
+            status="ok" if ok else "FAIL", error=err or "", **tags)
+        # A failed or unrecordable export is moved out of the finished-video folder here.
+        M.record_result(ledger_row, out)
 
         if ok:
+            exact_plan.record(ledger_row)
             made += 1
             # Counted alongside `made`, in the same place and on the same condition, so a
             # format's share is spent by videos that actually came out. A FAIL costs nothing.
@@ -1882,24 +1836,16 @@ def main():
             if fmt in PER_TUTORIAL_FORMATS:
                 _tk = (fmt, M.scene_key(name), os.path.basename(tut))
                 tut_uses[_tk] = tut_uses.get(_tk, 0) + 1
+            # In-run copies of the lifetime counts, so later picks in this run rank on them.
             if cap_row is not None:
-                cid = str(cap_row.get("id", "")).strip()
-                cap_delta[cid] = cap_delta.get(cid, 0) + 1
                 cap_row[capcol] = int_or(cap_row.get(capcol), 0) + 1
-            if fmt == "line" and row is not None:
-                rid = str(row.get("id", "")).strip()
-                used_delta[rid] = used_delta.get(rid, 0) + 1
+            if fmt in PER_TUTORIAL_FORMATS and row is not None:
                 row[ucol] = int_or(row.get(ucol), 0) + 1
-            elif fmt == "compare" and row is not None:
-                rid = str(row.get("id", "")).strip()
-                cmp_delta[rid] = cmp_delta.get(rid, 0) + 1
-                row[ccol] = int_or(row.get(ccol), 0) + 1
             print("  ok   final_%04d  %-10s %-24s %s"
                   % (idx, fmt, name, (text.replace("\n", " / ")[:46] or money)))
         else:
             print("  FAIL final_%04d  %-10s %-24s %s" % (idx, fmt, name, err[:60]))
 
-    # Successful ledger rows are the only allowance counters.
     # Nothing to write. The row appended per video IS the record of what that video spent.
     print("\nmade %d of %d requested (batch %s) -> %s" % (made, wanted, batch, OUTDIR))
     if dup_skipped:
@@ -1918,12 +1864,6 @@ def main():
             print("  skipped %d on %s: it has made its %d videos with every tutorial it may "
                   "use in this format. A new tutorial is worth %d more on it."
                   % (n, scene, line_per_tutorial(), line_per_tutorial()))
-    if logo_skipped:
-        import collections as _c
-        for tut, n in _c.Counter(logo_skipped).most_common():
-            print("  skipped %d with %s: every logo pair it is tied to has gone from "
-                  "assets/logos/. Open Assets, press Choose on it, and tick a pair that is "
-                  "still there." % (n, tut))
     if combo_skipped:
         # Same rule, different pool. This one only ever fires on the card format, which draws
         # no line at all - so its four videos off a scene lean on the tutorial, the money
@@ -1935,7 +1875,7 @@ def main():
                   "twice. More tutorials or more money cards is the cure." % (n, scene))
     if made < wanted:
         # Say WHY rather than leaving a bare "made 2 of 4" to be puzzled over.
-        spare = sum(left_of(h, f) for f in want_formats for h in scenes_for(f))
+        spare = sum(exact_plan.count(os.path.basename(h), f) for f in want_formats for h in scenes_for(f))
         if not spare:
             print("Ran out of scenes - every one has made all it may in these formats (%s).\n"
                   "Drop more in assets/hooks/ (4.2s+) or assets/hooks_short/ (about 2s), or "

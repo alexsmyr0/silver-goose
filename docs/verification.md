@@ -1,6 +1,32 @@
 # Verification — 30 September 2026
 
-## Results
+## 15 November 2026: silent formats re-synced with Golden Goose's builder
+
+- **6 silent-builder tests passed** (`tests/test_silent_builder.py`, disposable library).
+  They cover:
+  - the Builder tab's count of unused covers;
+  - opening lines and tick-and-cross wording having no use limit while the enabled switch
+    still applies;
+  - saving wording without a use limit;
+  - the real render command: tutorial fitted, not cropped, plus hook and tutorial speed,
+    tint, zoom/shift and the later song start;
+  - a whole run: four micro changes on every video, no repeated cover, outputs in
+    per-format folders, and a refusal once covers run out.
+  Each test was checked to fail when the code it covers was broken.
+- 22 core tests (the pairing test was removed with pairing) and 4 launcher tests passed.
+  Compilation, JavaScript and shell syntax checks passed.
+- **Real renders:** two Line, then card, two Card only and two Tick and cross videos were
+  built with Silver Goose's own font, logos, songs and wording, plus generated stand-in clips.
+  The library holds no scenes or tutorials yet. The stand-ins were 60fps scenes and a 4:5
+  tutorial with white bands burned in near its top and bottom edges.
+  - All six fully decoded: H.264 1080×1920, square pixels, 30fps, AAC.
+  - Each length equals the cut plus the tutorial at its drawn speed, and the song's drop
+    lands on the cut.
+  - Frame checks showed each format's overlays at the right moments and the tutorial fitted
+    with bars, its bands uncut by the 2–3% zoom.
+  - Not tested: real footage and a panel-triggered build in the browser.
+
+## Results, 30 September 2026
 
 - **4 launcher recovery tests passed** with real offline virtual-environment creation in
   temporary folders containing spaces. Covers broken interpreter links (reproducing John's
@@ -68,6 +94,7 @@ From this repository, with the required Python packages installed:
 
 ```sh
 python3 tests/test_core.py
+python3 tests/test_silent_builder.py
 python3 tests/test_launcher.py
 python3 -m compileall -q source
 node --check source/static/app.js

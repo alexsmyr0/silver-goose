@@ -209,12 +209,6 @@ def eligible_names(fmt, names, assets=None, account=None):
     return [name for name in names if _product_for(library, name, data) == product]
 
 
-def pairing_key(library, name):
-    _library(library)
-    _name(name)
-    return name if library == 'regular' else library + '/' + name
-
-
 def row_library(row):
     saved = (row.get('tutorial_library') or '').strip()
     if saved:

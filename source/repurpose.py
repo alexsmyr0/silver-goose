@@ -251,8 +251,10 @@ def speeds_for(src_fps, out_fps, speeds=None):
 
 
 def speed_key(speed):
-    """The speed as the ledger spells it."""
-    return "%.2fx" % speed
+    """The speed as the ledger spells it: two decimals, or three for a drawn speed (1.024x)."""
+    if abs(round(speed, 2) - round(speed, 3)) < 1e-9:
+        return "%.2fx" % speed
+    return "%.3fx" % speed
 
 
 def speed_of(key):

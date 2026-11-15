@@ -347,7 +347,7 @@ async function loadAssets() {
                             )
                             .join(
                               "",
-                            )}</select><button class="small" data-pairing="${pool.library}" data-name="${esc(f.name)}">Pairing</button>`
+                            )}</select>`
                         : `<small>${(f.bytes / 1024 / 1024).toFixed(1)} MB</small>`
                     }${f.settings || pool.id === "reaction_music" ? `<button class="small" data-media-settings="${pool.id}" data-name="${esc(f.name)}">Settings</button>` : ""}<button class="small remove" data-remove="${pool.id}" data-name="${esc(f.name)}" aria-label="Remove ${esc(f.name)}">×</button></div>${f.error ? `<p class="error">${esc(f.error)}</p>` : ""}`,
                 )
@@ -390,8 +390,6 @@ async function loadAssets() {
         toast("Content type saved.");
         await refreshFormats();
       });
-    for (const b of $$("[data-pairing]"))
-      b.onclick = act(() => editPairing(b.dataset.pairing, b.dataset.name));
     for (const b of $$("[data-media-settings]"))
       b.onclick = act(() => {
         const item = items.find((x) => x.pool.id === b.dataset.mediaSettings);
@@ -578,44 +576,6 @@ $("#tutorial-settings").onclick = act(async () => {
     ],
   );
 });
-async function editPairing(library, name) {
-  const p = await api(
-    "/api/tutorials/pairing?library=" +
-      library +
-      "&name=" +
-      encodeURIComponent(name),
-  );
-  const choices = {
-    logos: p.logos.map((x) => [x, x]),
-    compare: p.compare.map((x) => [x.id, x.bad + " / " + x.good]),
-  };
-  modal(
-    "Pairing · " + name,
-    Object.entries(choices)
-      .map(
-        ([kind, options]) =>
-          `<section class="pairing-group"><label><input type="checkbox" data-pair-all="${kind}" ${p.choice[kind] === null || p.choice[kind] === undefined ? "checked" : ""}> All ${kind === "compare" ? "comparison wordings" : kind}</label><div class="pairing-options">${options.map(([id, label]) => `<label><input type="checkbox" data-pair-kind="${kind}" value="${esc(id)}" ${p.choice[kind]?.includes(id) ? "checked" : ""}>${esc(label)}</label>`).join("")}</div></section>`,
-      )
-      .join(""),
-    [
-      [
-        "Save",
-        async () => {
-          const d = { library, name };
-          for (const kind of Object.keys(choices))
-            d[kind] = $(`[data-pair-all="${kind}"]`).checked
-              ? null
-              : $$(`[data-pair-kind="${kind}"]:checked`).map((x) => x.value);
-          await api("/api/tutorials/pairing", d);
-          close();
-          await refreshFormats();
-          toast("Pairing saved.");
-        },
-        true,
-      ],
-    ],
-  );
-}
 function mediaSettings(pool, file) {
   let settings = { ...file.settings };
   const reaction =

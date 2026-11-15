@@ -21,7 +21,6 @@ SETTINGS = (
     "caption_fixes.csv",
     "caption_vocab.txt",
     "hook_lines_avoid.csv",
-    "tutorial_pairing.json",
     "tutorial_libraries.json",
     "tutorial_story_music.json",
     "ai_larp_music.json",

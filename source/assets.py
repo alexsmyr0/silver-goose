@@ -82,8 +82,10 @@ for role, label in [
     )
 
 TABLES = {
-    "hook_lines": ("Opening lines", ["hook_text", "enabled", "retire_at"]),
-    "compare_lines": ("Comparison wording", ["bad", "good", "enabled", "retire_at"]),
+    # No use limit on these two: they never retire (see wording_allowances.unlimited).
+    # A saved retire_at value stays in the file, untouched, because rows are merged on save.
+    "hook_lines": ("Opening lines", ["hook_text", "enabled"]),
+    "compare_lines": ("Comparison wording", ["bad", "good", "enabled"]),
     "farm_hooks": ("Titles", ["hook_text", "enabled", "retire_at"]),
     "mcp_farm_hooks": ("Titles", ["hook_text", "enabled", "retire_at"]),
     "money_cards": ("Money cards", ["amount", "per"]),
@@ -409,6 +411,8 @@ def save_table(key, values):
             raise ValueError("Text is too long.")
         if "enabled" in cols:
             row["enabled"] = "0" if row["enabled"] in ("0", "false") else "1"
+            row["your_uses"] = "0"
+        if "retire_at" in cols:
             default = 40 if "farm" in key else 25
             try:
                 n = int(row["retire_at"] or default)
@@ -417,7 +421,6 @@ def save_table(key, values):
             if not 1 <= n <= 1000:
                 raise ValueError("Wording limits must be from 1 to 1000.")
             row["retire_at"] = str(n)
-            row["your_uses"] = "0"
         rows.append(row)
     csvfile.write(
         paths.data(key + ".csv"),

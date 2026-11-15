@@ -6,7 +6,7 @@ from unittest.mock import patch
 TEST_ROOT = pathlib.Path(tempfile.mkdtemp(prefix="silver-core-"))
 os.environ["SG_LIBRARY"] = str(TEST_ROOT / "library")
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "source"))
-import assets as A, catalog, csvfile, jobs, manifest as M, paths, pairing, tutorial_libraries as TL, wording_allowances as WA
+import assets as A, catalog, csvfile, jobs, manifest as M, paths, tutorial_libraries as TL, wording_allowances as WA
 from app import create_app, invalidate
 from werkzeug.datastructures import FileStorage
 
@@ -177,11 +177,6 @@ class Core(unittest.TestCase):
         with self.assertRaises(ValueError):
             A.save_table("farm_hooks", [dict(hook_text="", retire_at="NaN")])
         self.assertEqual(pathlib.Path(p).read_bytes(), before)
-
-    def test_corrupt_pairing_does_not_become_unrestricted(self):
-        pathlib.Path(pairing.path()).write_text("{broken")
-        with self.assertRaises(ValueError):
-            pairing.load()
 
     def test_tutorial_identity_and_product(self):
         root = pathlib.Path(TL.folder("regular"))

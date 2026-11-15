@@ -7,8 +7,8 @@ import fcntl, hashlib, json, os, secrets, subprocess, sys, threading, time, webb
 import stat
 from flask import Flask, jsonify, render_template, request, send_file, abort
 from werkzeug.serving import make_server
-import assets as A, catalog, csvfile, formula, jobs, manifest as M, paths, production
-import tutorial_libraries as TL, pairing
+import assets as A, catalog, formula, jobs, manifest as M, paths, production
+import tutorial_libraries as TL
 from install_config import atomic_write_json
 
 CACHE = {}
@@ -287,36 +287,6 @@ def create_app():
         data = request.get_json()
         with jobs.exclusive():
             TL.assign(data["library"], data["names"], data["product"])
-            invalidate()
-        return jsonify(ok=True)
-
-    @app.get("/api/tutorials/pairing")
-    def pairing_get():
-        library = request.args["library"]
-        name = request.args["name"]
-        key = TL.pairing_key(library, name)
-        import make_videos as MV
-
-        return jsonify(
-            choice=pairing.choice(key),
-            logos=[p["key"] for p in MV.logo_pairs(paths.ASSETS)[0]],
-            compare=csvfile.read(paths.data("compare_lines.csv"))[0],
-            captions=csvfile.read(paths.data("captions.csv"))[0],
-        )
-
-    @app.post("/api/tutorials/pairing")
-    def pairing_save():
-        data = request.get_json()
-        key = TL.pairing_key(data["library"], data["name"])
-        with jobs.exclusive():
-            for kind in ("logos", "compare"):
-                if kind in data:
-                    if data[kind] is not None and (
-                        not isinstance(data[kind], list)
-                        or not all(isinstance(x, str) for x in data[kind])
-                    ):
-                        raise ValueError("Invalid tutorial pairing.")
-                    pairing.set_choice(key, kind, data[kind])
             invalidate()
         return jsonify(ok=True)
 
