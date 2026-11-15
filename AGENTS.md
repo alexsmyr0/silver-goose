@@ -1,6 +1,6 @@
 # Silver Goose
 
-Local Mac video builder for John. Read `README.md` and `docs/architecture.md`.
+Local Mac video builder for the owners' friends (the first handoff, 30 Sep 2026, was for John). Read `README.md` and `docs/architecture.md`.
 Use the caveman skill for concise coding communication.
 
 - Only Builder and Assets. OpenArt MCP, Chat and Director; eight formats.

@@ -65,7 +65,7 @@ def package():
                 )
             )
     (target / "CONTENTS.json").write_text(json.dumps(manifest, indent=2) + "\n")
-    archive = dist / "Silver Goose for John.zip"
+    archive = dist / "Silver Goose.zip"
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:
         for p in sorted(target.rglob("*")):
             if p.is_file():

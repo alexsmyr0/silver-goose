@@ -368,7 +368,7 @@ def build_plan(rows=None, *, assets=None, pools=None, line_rows=None, cmp_rows=N
     rows = M.read_rows() if rows is None else rows
 
     def live_wording(name):
-        # Only rows John has left switched on; the use count never retires these two pools.
+        # Only rows left switched on in Assets; the use count never retires these two pools.
         path = paths.data(name)
         return WA.live(WA.read(path)[0], path=path)
     line_rows = live_wording('hook_lines.csv') if line_rows is None else line_rows

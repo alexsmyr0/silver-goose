@@ -18,7 +18,8 @@ Status: implemented locally, 30 September 2026. Supersedes the initial analysis/
 - Explicit batches, availability, progress/logs, successful output counts, recoverable errors.
 - Copy local production settings and available assets; fresh independent build history.
 - First-run installation of missing dependencies, with unavoidable Mac approvals in Terminal.
-- Private folder/ZIP handoff for John, excluding the owner's provider keys and history.
+- Private folder/ZIP handoff for each friend (the first was John), excluding the owner's
+  provider keys and history.
 
 ## Excluded by agreement
 
@@ -38,9 +39,9 @@ are assumed to have captions burned in. Accounts, footage locks and campaigns st
 
 ## Practical limits
 
-John needs macOS 26 or newer for Apple's caption engine. Clean-Mac system installation
+Each recipient needs macOS 26 or newer for Apple's caption engine. Clean-Mac system installation
 requires Apple/Homebrew interaction; it cannot be entirely silent. Missing footage is
 reported in Assets/Builder rather than fabricated. The copied library lacks short Card
-scenes, Hook Story pools and AI LARP source pairs/tutorials. These need his uploads.
+scenes, Hook Story pools and AI LARP source pairs/tutorials. Each recipient uploads these.
 
 [User guide](README.md) · [Architecture](docs/architecture.md) · [Verification](docs/verification.md)

@@ -82,8 +82,8 @@ the local HTTP endpoint correctly served MP4 byte ranges.
   compiles against the local SDK but was not forced by removing system assets.
 - Intel Macs and older macOS versions were not tested. macOS 26+ is required; the tested Mac
   uses Apple Silicon. A missing/unsupported Apple speech engine reports an error.
-- John's current handoff includes music but no video ingredients. He needs to upload his
-  own footage and tutorials before building. The successful render checks above used
+- The starter library includes music but no video ingredients. Each recipient uploads
+  their own footage and tutorials before building. The successful render checks above used
   the earlier populated library or temporary fixtures.
 - No test can guarantee a remote platform will accept a manually posted video; Silver Goose
   makes local videos and has no posting integration.
@@ -108,4 +108,4 @@ excludes history and prints the resulting `report.json` path. It requires the im
 OpenArt assets, macOS, FFmpeg and Swift. It never writes to its supplied library.
 Private screenshots, render reports and delivery files stay outside Git (`evidence/`,
 `dist/` or the printed temporary directory). Rebuild the handoff with
-`python3 scripts/package_for_john.py`; move an existing `dist/Silver Goose` aside first.
+`python3 scripts/package.py`; move an existing `dist/Silver Goose` aside first.

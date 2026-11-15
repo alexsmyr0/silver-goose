@@ -121,7 +121,7 @@ def main():
                     copy(f, f.relative_to(old / "shared-assets"))
     for account in campaign["accounts"]:
         for pool in POOLS:
-            # Used silent takes become fresh source footage for John's independent history.
+            # Used silent takes become fresh source footage for the recipient's independent history.
             for origin in [pool] + (
                 [pool + "_used"] if pool in ("hooks", "hooks_short") else []
             ):

@@ -88,7 +88,7 @@ shared asset roles and configured accounts' private footage, deduplicates compat
 sources, resets usage, excludes posting history/credentials and records checksums.
 One missing tutorial tag was removed because its source file was absent.
 
-`scripts/package_for_john.py` produces `dist/Silver Goose` and a ZIP. Only allowlisted
+`scripts/package.py` produces `dist/Silver Goose` and `dist/Silver Goose.zip`. Only allowlisted
 production settings and private ingredients accompany the code. No generated videos,
 manifest, ID sequence, jobs, compiled native binaries or virtual environment is shipped.
 Executable launcher permissions and every archive entry are verified.
