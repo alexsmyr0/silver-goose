@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Package source plus private ingredients, excluding history, keys, caches and outputs."""
+"""Package source plus private ingredients, excluding history, keys, caches and outputs.
+
+The ingredients go in `starter-library/`, which the launcher copies to the recipient's
+Movies/Silver Goose Library on first launch (source/library_location.py). The ZIP never
+contains a `library/` folder, so nobody's own library is shipped or replaced.
+"""
 
 from pathlib import Path
 import hashlib, json, shutil, stat, sys, zipfile
@@ -31,11 +36,13 @@ def package():
     shutil.copy2(
         ROOT / "Start Silver Goose.command", target / "Start Silver Goose.command"
     )
-    (target / "README.md").write_text(
+    # Plain text, so a double-click opens it in TextEdit; the user part of README.md.
+    (target / "Read Me First.txt").write_text(
         (ROOT / "README.md").read_text().split("## Development")[0]
     )
+    starter = target / "starter-library"
     for name in ("assets/openart", "data/openart", "videos/openart", "work"):
-        (target / "library" / name).mkdir(parents=True, exist_ok=True)
+        (starter / name).mkdir(parents=True, exist_ok=True)
     source = ROOT / "library/assets/openart"
     for p in source.rglob("*"):
         relative = p.relative_to(source)
@@ -43,17 +50,17 @@ def package():
             continue
         if p.is_symlink():
             raise ValueError("The handoff must not contain symlinks: " + str(relative))
-        dest = target / "library/assets/openart" / relative
+        dest = starter / "assets/openart" / relative
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(p, dest)
     for name in DATA:
         p = ROOT / "library/data/openart" / name
         if p.exists():
-            shutil.copy2(p, target / "library/data/openart" / name)
+            shutil.copy2(p, starter / "data/openart" / name)
     for name in ("import-receipt.json",):
         p = ROOT / "library" / name
         if p.exists():
-            shutil.copy2(p, target / "library" / name)
+            shutil.copy2(p, starter / name)
     manifest = []
     for p in sorted(target.rglob("*")):
         if p.is_file():
@@ -83,6 +90,8 @@ def package():
             "/next_video_id.json",
         )
         assert not any(any(x in n for x in banned) for n in z.namelist())
+        assert not any(n.startswith("Silver Goose/library/") for n in z.namelist())
+        assert "Silver Goose/Read Me First.txt" in z.namelist()
     print(
         json.dumps(
             {

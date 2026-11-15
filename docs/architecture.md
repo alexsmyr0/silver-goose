@@ -43,11 +43,20 @@ the use limit on opening lines and comparison wording were removed, as in Golden
 | Native captions/HDR/segmentation | `source/*.swift`, `source/speech.py`, `source/captions.py` |
 | Final encoding | `source/video_encode.py`, `source/encode.py` |
 | First run / double click | `Start Silver Goose.command`, `source/bootstrap.py` |
+| Library location / one-time move | `source/library_location.py` |
 
 ## Library
 
-`SG_LIBRARY` selects an isolated library before any imports. Normal launch sets it to
-`library` beside `source`. Importing paths creates/migrates nothing. `paths.prepare()`
+`SG_LIBRARY` selects an isolated library before any imports. The launcher sets it from
+`source/library_location.py`: a delivered copy uses `~/Movies/Silver Goose Library`, outside
+the app folder, so updating replaces the app folder and nothing else (Movies, not Documents,
+which is often synced to iCloud and can offload footage). On its first launch it copies the
+ZIP's `starter-library/` there. An older copy whose library is inside its folder, or the
+folder the last launch ran from, has it moved there once: renamed on the same disk, or
+copied with the original kept under a new name on another disk. It refuses while that
+library's panel or build locks are held. An existing library is never replaced. A Git
+checkout keeps `library` beside `source`, which packaging reads. An explicit `SG_LIBRARY`
+wins. Importing paths creates/migrates nothing. `paths.prepare()`
 explicitly creates missing folders and starter tables, never replaces populated files.
 There are no symlinks into Golden Goose and no account paths.
 
@@ -91,6 +100,8 @@ One missing tutorial tag was removed because its source file was absent.
 `scripts/package.py` produces `dist/Silver Goose` and `dist/Silver Goose.zip`. Only allowlisted
 production settings and private ingredients accompany the code. No generated videos,
 manifest, ID sequence, jobs, compiled native binaries or virtual environment is shipped.
+The ingredients are packaged as `starter-library/` with a plain-text `Read Me First.txt`
+(the user part of README.md); the archive never contains `library/`.
 Executable launcher permissions and every archive entry are verified.
 The current handoff library contains music and its settings, wording, captions, money
 cards, logo pairs, the font and emoji settings. Video ingredients and their saved
@@ -102,7 +113,7 @@ second launch. Homebrew is installed with one `sudo` password prompt and its
 non-interactive mode, with the remembered password kept fresh until it finishes.
 It validates the private Python environment, including its interpreter, location and pip.
 Broken or incomplete environments are moved under a unique `.venv-old-*/environment`
-backup before recreation. This does not reinstall system Python/FFmpeg or modify `library`.
+backup before recreation. This does not reinstall system Python/FFmpeg or modify the library.
 Python packages are installed inside this folder, native helpers compiled on this Mac,
 and missing Apple speech assets prepared through the official system API. First setup
 needs internet. Runtime recognition and rendering run locally. No automatic upgrades,

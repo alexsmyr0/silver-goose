@@ -1,4 +1,35 @@
-# Verification — 30 September 2026
+# Verification
+
+Dated records, newest first. Repeatable checks are at the end.
+
+## 15 November 2026: library outside the app folder, smoother first launch
+
+- **9 library-location tests passed** (`tests/test_library_location.py`), each checked to
+  fail when its rule was broken. They cover:
+  - a fresh install copying the starter library to Movies;
+  - an older copy's library moved out of its own folder;
+  - a new version unzipped elsewhere finding the old library through the launcher's
+    folder record;
+  - an existing library winning, with nothing moved;
+  - a developer checkout keeping `library/`, and never being emptied by a delivered copy;
+  - refusal while the old panel's lock is held;
+  - a library on another disk copied, with the original kept;
+  - the launcher entry point printing only the folder.
+- **3 new launcher tests passed** with stand-in tools, nothing installed. They cover the
+  Apple-tools wait carrying on, the wait giving up with a sentence, and Homebrew asking
+  for the password once and running unattended. The two behaviour tests were checked to
+  fail when broken. 44 tests passed in all, across the four suites.
+- **The delivered ZIP, end to end:** `dist/Silver Goose.zip` was unzipped and its real
+  launcher run with a stand-in home folder. Python, FFmpeg and Apple's tools were already
+  on this Mac, so their install branches did not run.
+  - A fresh unzip created `Movies/Silver Goose Library` from the starter, installed its
+    Python packages, compiled the helpers, confirmed Apple's speech model and served the
+    panel in about 17 seconds.
+  - The 30 Sep ZIP, given a build-history row and a footage file, was then updated by
+    starting the new ZIP from another folder. Its library moved to Movies intact, and the
+    old folder no longer held it.
+- Not tested: the Homebrew and Apple Command Line Tools installs on a Mac without them,
+  and macOS's first-open security prompt for a downloaded ZIP.
 
 ## 15 November 2026: silent formats re-synced with Golden Goose's builder
 
@@ -96,6 +127,7 @@ From this repository, with the required Python packages installed:
 python3 tests/test_core.py
 python3 tests/test_silent_builder.py
 python3 tests/test_launcher.py
+python3 tests/test_library_location.py
 python3 -m compileall -q source
 node --check source/static/app.js
 bash -n 'Start Silver Goose.command'

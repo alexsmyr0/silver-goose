@@ -22,8 +22,10 @@ if [ ! -f "$SG_ROOT/source/app.py" ]; then
 fi
 [ -f "$SG_ROOT/source/app.py" ] || fail 'Choose the Silver Goose folder containing source/app.py.'
 SG_ROOT="$(cd "$SG_ROOT" && pwd -P)"
-mkdir -p "$(dirname "$SG_POINTER")"
-printf '%s\n' "$SG_ROOT" > "$SG_POINTER"
+# The folder the last launch ran from: an older version may still hold the library.
+# The pointer is only updated once the library is settled, further down.
+SG_PREVIOUS=''
+if [ -f "$SG_POINTER" ]; then IFS= read -r SG_PREVIOUS < "$SG_POINTER" || true; fi
 cd "$SG_ROOT"
 echo 'Silver Goose · local video builder'
 SG_MAC_MAJOR="$(sw_vers -productVersion | cut -d. -f1)"
@@ -95,6 +97,12 @@ fi
 if [ ! -x .venv/bin/python ]; then "$SG_PYTHON" -m venv .venv; fi
 SG_ENV_PYTHON="$SG_ROOT/.venv/bin/python"
 "$SG_ENV_PYTHON" source/bootstrap.py
-export SG_LIBRARY="$SG_ROOT/library"
+# Movies/Silver Goose Library, outside this folder, so an update is a plain replace.
+# A Git checkout keeps library/ beside source/. See source/library_location.py.
+SG_LIBRARY="$("$SG_ENV_PYTHON" source/library_location.py --root "$SG_ROOT" --previous "$SG_PREVIOUS")" \
+  || fail 'Your library could not be set up. See the message above.'
+export SG_LIBRARY
+mkdir -p "$(dirname "$SG_POINTER")"
+printf '%s\n' "$SG_ROOT" > "$SG_POINTER"
 trap - ERR
 "$SG_ENV_PYTHON" source/app.py "$@" || fail 'The panel stopped. See the error above.'
