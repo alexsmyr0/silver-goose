@@ -28,10 +28,22 @@ cd "$SG_ROOT"
 echo 'Silver Goose · local video builder'
 SG_MAC_MAJOR="$(sw_vers -productVersion | cut -d. -f1)"
 [ "$SG_MAC_MAJOR" -ge 26 ] || fail 'macOS 26 or newer is required for local automatic captions. Update macOS in System Settings, then run again.'
-if ! xcode-select -p >/dev/null 2>&1 || ! xcrun --find swiftc >/dev/null 2>&1; then
-  echo 'Apple Command Line Tools are needed. Approve the Apple installation dialog.'
-  xcode-select --install || true
-  fail 'Finish installing Apple Command Line Tools, then double-click this file again.'
+sg_has_swift() { xcode-select -p >/dev/null 2>&1 && xcrun --find swiftc >/dev/null 2>&1; }
+if ! sg_has_swift; then
+  # Wait for Apple's installer instead of asking for a second double-click.
+  echo "Apple's Command Line Tools are needed. Click Install in Apple's window and agree."
+  echo 'Leave this window open: Silver Goose carries on by itself when they are installed.'
+  xcode-select --install >/dev/null 2>&1 || true
+  SG_WAITED=0
+  until sg_has_swift; do
+    sleep 10
+    SG_WAITED=$((SG_WAITED + 10))
+    if [ $((SG_WAITED % 300)) -eq 0 ]; then
+      echo "Still waiting for Apple's installer ($((SG_WAITED / 60)) minutes so far)…"
+    fi
+    [ "$SG_WAITED" -lt 7200 ] || fail "Apple's Command Line Tools did not finish installing. If you closed Apple's window, double-click this file again."
+  done
+  echo "Apple's Command Line Tools are installed."
 fi
 SG_PYTHON=''
 for SG_CANDIDATE in python3.12 python3; do
@@ -43,15 +55,29 @@ SG_NEED_PYTHON=0; SG_NEED_FFMPEG=0
 [ -n "$SG_PYTHON" ] || SG_NEED_PYTHON=1
 if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then SG_NEED_FFMPEG=1; fi
 if [ "$SG_NEED_PYTHON" -eq 1 ] || [ "$SG_NEED_FFMPEG" -eq 1 ]; then
-  echo 'Missing requirements will be installed with Homebrew (Python and/or FFmpeg).'
-  read -r -p 'Install missing requirements? [Y/n] ' SG_ANSWER
+  echo 'Silver Goose needs Python and FFmpeg (both free), installed with Homebrew.'
+  read -r -p 'Press Return to install them, or type n and Return to stop. ' SG_ANSWER
   case "$SG_ANSWER" in n|N|no|NO) fail 'Requirements were not installed.' ;; esac
   if ! command -v brew >/dev/null 2>&1; then
-    echo 'Installing Homebrew. Its installer may request your Mac password and confirmation.'
+    # One password prompt here; Homebrew then runs without its own prompts. Its
+    # non-interactive mode uses the password sudo has just remembered, kept fresh below
+    # for a long install.
+    echo 'Installing Homebrew (free). Type your Mac password and press Return.'
+    echo 'Nothing appears while you type. An administrator account is needed.'
+    sudo -v || fail 'Homebrew needs the password of an administrator account on this Mac.'
+    ( SG_NAP=''
+      trap 'kill "$SG_NAP" 2>/dev/null; exit 0' TERM
+      while kill -0 "$$" 2>/dev/null; do
+        sudo -n true 2>/dev/null || true
+        sleep 50 & SG_NAP=$!
+        wait "$SG_NAP" || true
+      done ) &
+    SG_SUDO_KEEPALIVE=$!
     SG_BREW_SCRIPT="$(mktemp -t silver-goose-homebrew)"
     curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh -o "$SG_BREW_SCRIPT"
-    /bin/bash "$SG_BREW_SCRIPT"
+    NONINTERACTIVE=1 /bin/bash "$SG_BREW_SCRIPT"
     rm -f "$SG_BREW_SCRIPT"
+    kill "$SG_SUDO_KEEPALIVE" 2>/dev/null || true
   fi
   command -v brew >/dev/null 2>&1 || fail 'Homebrew is not available. Finish its setup, then run again.'
   if [ "$SG_NEED_PYTHON" -eq 1 ]; then brew install python@3.12; SG_PYTHON="$(brew --prefix python@3.12)/bin/python3.12"; fi

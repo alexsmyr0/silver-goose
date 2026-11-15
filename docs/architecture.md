@@ -97,6 +97,9 @@ cards, logo pairs, the font and emoji settings. Video ingredients and their save
 assignments are empty.
 
 The launcher detects missing dependencies; it asks before installing system tools.
+It waits for Apple's Command Line Tools installer and continues, rather than asking for a
+second launch. Homebrew is installed with one `sudo` password prompt and its
+non-interactive mode, with the remembered password kept fresh until it finishes.
 It validates the private Python environment, including its interpreter, location and pip.
 Broken or incomplete environments are moved under a unique `.venv-old-*/environment`
 backup before recreation. This does not reinstall system Python/FFmpeg or modify `library`.
